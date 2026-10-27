@@ -68,6 +68,24 @@ const mult = st => 1 + 0.03 * Math.min(st, 10);
 const softCap = v => v <= DAY_SOFT_CAP ? v : DAY_SOFT_CAP + (v - DAY_SOFT_CAP) * OVER_CAP_RATE;
 const valid = s => !!(s && SRC[s.src] && Number.isFinite(s.min) && s.min > 0 && Number.isFinite(s.at));
 const isLate = ms => { const h = new Date(ms).getHours(); return h >= 23 || h < 5; };
+const SESSION_GAP = 2 * HOUR;  // commits closer than this join one session
+
+/* ---------- rescans ----------
+   A rescan re-reads commits from `since` and rebuilds the sessions after it. If `since` fell inside a session,
+   the rebuilt one would only keep the commits after `since`, and the start of the session would be lost for good.
+   So the boundary moves back to the start of any session it touches (or that ends less than SESSION_GAP before it). */
+const sessionStart = s => Number.isFinite(s.first) ? s.first : s.at - Math.max(0, (s.min || 0) - 30) * 6e4;
+function rescanFrom(list, since) {
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const s of list || []) {
+      if (!s || !Number.isFinite(s.at) || s.at < since - SESSION_GAP) continue;
+      const first = sessionStart(s);
+      if (Number.isFinite(first) && first < since) { since = first; moved = true; }
+    }
+  }
+  return since;
+}
 
 /* ---------- forms ---------- */
 function traitAt(seen, t) {
@@ -114,7 +132,13 @@ function derive(list, now, extra) {
       const dt = new Date(s.at);
       if (dt.getDay() === 5 && dt.getDate() === 13) fri13 = true;
       seen.push(s);
-    } else { xp += it.e.xp; gain[it.e.id] = it.e.xp; fixes++; }
+    } else {
+      // CI fixes share the daily soft cap with sessions, so a flapping build can't carry the pet.
+      const d = dayIdx(it.e.at), before = dayRaw.get(d) || 0;
+      dayRaw.set(d, before + it.e.xp);
+      const g = Math.max(1, Math.round(softCap(before + it.e.xp) - softCap(before)));
+      xp += g; gain[it.e.id] = g; fixes++;
+    }
     while (stage < MAX_STAGE && xp >= STAGES[stage + 1].xp) { stage++; if (stage >= FORM_STAGE) forms[stage] = traitAt(seen, it.t); }
   }
   const today = dayIdx(now);
@@ -181,7 +205,7 @@ function toSessions(repo, commits, releases, overrides) {
   const groups = [];
   let g = null;
   for (const c of commits) {
-    if (g && c.t - g.last <= 2 * HOUR) { g.last = c.t; g.n++; g.msgs.push(c.msg); }
+    if (g && c.t - g.last <= SESSION_GAP) { g.last = c.t; g.n++; g.msgs.push(c.msg); }
     else { g = {first: c.t, last: c.t, n: 1, oid: c.oid, msgs: [c.msg]}; groups.push(g); }
   }
   for (const r of releases || []) { let best = null; for (const x of groups) if (r >= x.first - HOUR && r <= x.last + 12 * HOUR) best = x; if (best) best.rel = true; }
@@ -207,47 +231,68 @@ function ciFromPipeline(status) {
   if (['running', 'pending', 'created', 'preparing', 'waiting_for_resource', 'scheduled'].indexOf(status) >= 0) return 'run';
   return null;
 }
-// Merges freshly observed CI results into the stored map. A red -> green change earns a "build fixed" event.
+// Merges freshly observed CI results into the stored map. A red -> green change on the same branch earns a
+// "build fixed" event, at most once per repo per day. Moving from a red branch to a green one is not a fix.
 function updateCI(prev, observed, now) {
   const ci = Object.assign({}, prev || {}), events = [];
   for (const key in observed) {
-    const o = observed[key], p = ci[key];
+    const o = observed[key], old = ci[key];
     if (!o || !o.s) { delete ci[key]; continue; }
+    const at = o.at || now, ref = o.ref || undefined;
+    const p = old && (!old.ref || !ref || old.ref === ref) ? old : null;  // entries saved before refs were tracked count as the same branch
+    const lastFix = (old && old.lastFix) || undefined;
     const wasRed = !!(p && (p.s === 'fail' || p.wasFail));
-    if (o.s === 'fail') ci[key] = {s: 'fail', at: o.at || now, since: p && p.s === 'fail' ? p.since : (o.at || now)};
-    else if (o.s === 'run') ci[key] = {s: 'run', at: o.at || now, wasFail: wasRed, since: wasRed && p ? p.since : undefined};
+    if (o.s === 'fail') ci[key] = {s: 'fail', at, ref, since: p && p.s === 'fail' ? p.since : at, lastFix};
+    else if (o.s === 'run') ci[key] = {s: 'run', at, ref, wasFail: wasRed, since: wasRed ? p.since : undefined, lastFix};
     else {
-      ci[key] = {s: 'pass', at: o.at || now};
-      if (wasRed) events.push({id: 'fix:' + key + ':' + (o.at || now), kind: 'fix', repo: key, at: o.at || now, xp: FIX_XP});
+      const fix = wasRed && !(lastFix && at - lastFix < DAY);
+      ci[key] = {s: 'pass', at, ref, lastFix: fix ? at : lastFix};
+      if (fix) events.push({id: 'fix:' + key + ':' + at, kind: 'fix', repo: key, at, xp: FIX_XP});
     }
   }
   return {ci, events};
 }
 
 /* ---------- GitHub (GraphQL) ---------- */
-const Q_REPO = `query($owner:String!,$name:String!,$since:GitTimestamp!,$uid:ID!){repository(owner:$owner,name:$name){isPrivate object(expression:"HEAD:"){... on Tree{entries{name type}}} refs(refPrefix:"refs/heads/",first:20,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{target{... on Commit{committedDate statusCheckRollup{state} history(first:100,since:$since,author:{id:$uid}){nodes{oid authoredDate messageHeadline}}}}}} releases(first:10,orderBy:{field:CREATED_AT,direction:DESC}){nodes{publishedAt}}}}`;
+const Q_REPO = `query($owner:String!,$name:String!,$since:GitTimestamp!,$uid:ID!){repository(owner:$owner,name:$name){isPrivate object(expression:"HEAD:"){... on Tree{entries{name type}}} refs(refPrefix:"refs/heads/",first:20,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{name target{... on Commit{committedDate statusCheckRollup{state} history(first:100,since:$since,author:{id:$uid}){pageInfo{hasNextPage endCursor} nodes{oid authoredDate messageHeadline}}}}}} releases(first:10,orderBy:{field:CREATED_AT,direction:DESC}){nodes{publishedAt}}}}`;
+const Q_HIST = `query($owner:String!,$name:String!,$ref:String!,$since:GitTimestamp!,$uid:ID!,$cursor:String){repository(owner:$owner,name:$name){ref(qualifiedName:$ref){target{... on Commit{history(first:100,after:$cursor,since:$since,author:{id:$uid}){pageInfo{hasNextPage endCursor} nodes{oid authoredDate messageHeadline}}}}}}}`;
+const HISTORY_PAGES = 30;  // per branch, 100 commits each
 async function scanGitHubRepo(gql, nameWithOwner, since, uid, overrides) {
   const parts = nameWithOwner.split('/');
-  const d = await gql(Q_REPO, {owner: parts[0], name: parts[1], since: new Date(since).toISOString(), uid});
+  const vars = {owner: parts[0], name: parts[1], since: new Date(since).toISOString(), uid};
+  const d = await gql(Q_REPO, vars);
   const r = d && d.repository;
   if (!r) return null;
   const entries = ((r.object && r.object.entries) || []).map(e => ({name: e.name, dir: e.type === 'tree'}));
   const kind = detectKind(entries) || 'github';
   const seen = new Map();
+  const add = nodes => { let fresh = 0; for (const c of nodes) if (c && !seen.has(c.oid)) { seen.set(c.oid, {oid: c.oid, t: Date.parse(c.authoredDate), msg: c.messageHeadline || ''}); fresh++; } return fresh; };
   let head = null;
+  const more = [];
   for (const ref of (r.refs && r.refs.nodes) || []) {
     const t = ref && ref.target;
     if (!t) continue;
-    const nodes = (t.history && t.history.nodes) || [];
-    for (const c of nodes) if (!seen.has(c.oid)) seen.set(c.oid, {oid: c.oid, t: Date.parse(c.authoredDate), msg: c.messageHeadline || ''});
+    const h = t.history || {}, nodes = h.nodes || [];
+    const fresh = add(nodes);
+    if (fresh && h.pageInfo && h.pageInfo.hasNextPage && ref.name) more.push({ref: 'refs/heads/' + ref.name, cursor: h.pageInfo.endCursor});
     const at = Date.parse(t.committedDate);
-    if (nodes.length && Number.isFinite(at) && (!head || at > head.at)) head = {at, s: ciFromRollup(t.statusCheckRollup && t.statusCheckRollup.state)};
+    if (nodes.length && Number.isFinite(at) && (!head || at > head.at)) head = {at, ref: ref.name, s: ciFromRollup(t.statusCheckRollup && t.statusCheckRollup.state)};
+  }
+  // Older pages. Branches share most of their history, so a branch stops as soon as a page brings nothing new.
+  for (const b of more) {
+    let cursor = b.cursor;
+    for (let page = 1; page < HISTORY_PAGES && cursor; page++) {
+      const x = await gql(Q_HIST, Object.assign({}, vars, {ref: b.ref, cursor}));
+      const h = x && x.repository && x.repository.ref && x.repository.ref.target && x.repository.ref.target.history;
+      if (!h || !add(h.nodes || [])) break;
+      cursor = h.pageInfo && h.pageInfo.hasNextPage ? h.pageInfo.endCursor : null;
+    }
   }
   const commits = [...seen.values()].filter(c => Number.isFinite(c.t) && c.t >= since);
   if (!commits.length) return null;
   const rel = ((r.releases && r.releases.nodes) || []).map(x => Date.parse(x.publishedAt)).filter(Number.isFinite);
   const repo = {key: 'gh:' + nameWithOwner, name: nameWithOwner, prov: 'gh', kind, private: !!r.isPrivate, last: Math.max(...commits.map(c => c.t))};
-  return {repo, sessions: toSessions(repo, commits, rel, overrides), ci: head && head.s ? {s: head.s, at: head.at} : null};
+  return {repo, sessions: toSessions(repo, commits, rel, overrides), ci: head && head.s ? {s: head.s, at: head.at, ref: head.ref} : null};
 }
 
 /* ---------- themes: Classic is drawn below; others are sprite sets registered at load ---------- */
@@ -837,7 +882,8 @@ ${muts.length ? `<text x="626" y="44" fill="${C.gold}" font-size="10" letter-spa
 const PetCore = {
   DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
   clamp, dayIdx, sessionXP, baseXP, mult, valid, mix, derive, gainFor, traitAt, statusLine,
-  detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, scanGitHubRepo,
+  SESSION_GAP, sessionStart, rescanFrom,
+  detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   build, renderSVG, THEMES, THEME_LIST, registerTheme, hasTheme, stageBody, themeColors,
 };
 root.PetCore = PetCore;

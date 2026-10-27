@@ -29,7 +29,8 @@ If nothing appears, run `Start code.daemon (debug).cmd` to see errors. Requires 
 - **XP per session**: commits in one repo less than 2 hours apart form a session. A session earns `12·ln(1 + minutes/20) + 7·√commits` (minutes up to 480, commits up to 50), plus 8 for tests, 6 for a bug fix and 15 for a release. Long sessions and commit bursts grow slowly on purpose.
 - **Streak**: +3% per consecutive coding day, up to +30%.
 - **Daily soft cap**: past 90 XP in a day, extra XP counts at 15%. Marathon days still count, they just can't carry the pet alone.
-- **CI**: turning a red build green earns +15 XP.
+- **CI**: turning a red build green on the same branch earns +15 XP, at most once a day per repo. It counts toward the daily soft cap.
+- **Rescans**: the widget re-reads the last 3 days on every scan, starting at the beginning of a session so none is cut in two. A repo that fails to scan keeps its saved sessions until the next scan.
 
 | Stage | XP | Body |
 | --- | ---: | --- |

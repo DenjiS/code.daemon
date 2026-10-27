@@ -45,7 +45,8 @@ function loadState(text) {
   if (o.overrides && typeof o.overrides === 'object') for (const k in o.overrides) if (SRC[o.overrides[k]]) s.overrides[k] = o.overrides[k];
   if (o.ci && typeof o.ci === 'object') for (const k in o.ci) {
     const c = o.ci[k];
-    if (c && ['pass', 'fail', 'run'].includes(c.s)) s.ci[k] = {s:c.s, at:+c.at || 0, since:+c.since || undefined, wasFail:!!c.wasFail};
+    if (c && ['pass', 'fail', 'run'].includes(c.s)) s.ci[k] = {s:c.s, at:+c.at || 0, since:+c.since || undefined, wasFail:!!c.wasFail,
+      ref: typeof c.ref === 'string' && c.ref ? c.ref : undefined, lastFix: +c.lastFix || undefined};
   }
   s.events = arr(o.events).filter(e => e && e.id && Number.isFinite(+e.at) && Number.isFinite(+e.xp))
     .map(e => ({id:String(e.id), kind:'fix', repo:String(e.repo || ''), at:+e.at, xp:+e.xp}));
@@ -192,11 +193,11 @@ async function scanGitHub(since, now) {
     if (stop || !conn.pageInfo.hasNextPage) break;
     cursor = conn.pageInfo.endCursor;
   }
-  const repos = [], sessions = [], observed = {};
+  const repos = [], sessions = [], observed = {}, failed = new Set();
   await eachLimit(active, 3, async name => {
     let res = null;
     try { res = await P.scanGitHubRepo(gql, name, since, viewer.id, state.overrides); }
-    catch (e) { if (FATAL.test(e.message)) throw e; return; }
+    catch (e) { if (FATAL.test(e.message)) throw e; failed.add('gh:' + name); return; }  // keep its saved sessions this time
     if (!res) return;
     repos.push(res.repo); sessions.push(...res.sessions);
     observed[res.repo.key] = res.ci;
@@ -207,13 +208,13 @@ async function scanGitHub(since, now) {
     try { const res = await P.scanGitHubRepo(gql, repoName(key), now - 14 * DAY, viewer.id, state.overrides); observed[key] = res ? res.ci : null; }
     catch (e) { if (FATAL.test(e.message)) throw e; }
   });
-  return {account: '@' + viewer.login, repos, sessions, observed};
+  return {account: '@' + viewer.login, repos, sessions, observed, failed};
 }
 
 async function glPipeline(projectId, username) {
   const pipes = await gl(`/api/v4/projects/${projectId}/pipelines?per_page=5&username=${encodeURIComponent(username)}`, true);
   if (!Array.isArray(pipes)) return null;
-  for (const p of pipes) { const s = P.ciFromPipeline(p.status); if (s) return {s, at: Date.parse(p.updated_at || p.created_at) || Date.now()}; }
+  for (const p of pipes) { const s = P.ciFromPipeline(p.status); if (s) return {s, at: Date.parse(p.updated_at || p.created_at) || Date.now(), ref: p.ref ? String(p.ref) : undefined}; }
   return null;
 }
 async function scanGitLab(since, now) {
@@ -230,14 +231,15 @@ async function scanGitLab(since, now) {
     projects.push(...list);
     if (list.length < 100) break;
   }
-  const repos = [], sessions = [], observed = {};
+  const repos = [], sessions = [], observed = {}, failed = new Set();
   await eachLimit(projects, 3, async pr => {
     const tree = await gl(`/api/v4/projects/${pr.id}/repository/tree?per_page=100`, true);
     const kind = P.detectKind((Array.isArray(tree) ? tree : []).map(e => ({name: e.name, dir: e.type === 'tree'}))) || 'gitlab';
     const seen = new Map();
-    for (let p = 1; p <= 10; p++) {
+    for (let p = 1; p <= 50; p++) {
       const list = await gl(`/api/v4/projects/${pr.id}/repository/commits?all=true&since=${iso}&per_page=100&page=${p}`, true);
-      if (!Array.isArray(list) || !list.length) break;
+      if (!Array.isArray(list)) { failed.add('gl:' + pr.id); return; }  // error page: keep its saved sessions this time
+      if (!list.length) break;
       for (const c of list) {
         const mine = emails.has(String(c.author_email || '').toLowerCase()) || (me.name && c.author_name === me.name);
         if (mine && !seen.has(c.id)) seen.set(c.id, {oid: c.id, t: Date.parse(c.authored_date), msg: c.title || ''});
@@ -255,7 +257,7 @@ async function scanGitLab(since, now) {
   });
   const recheck = Object.keys(state.ci).filter(k => k.startsWith('gl:') && state.ci[k].s !== 'pass' && !(k in observed));
   await eachLimit(recheck, 3, async key => { observed[key] = await glPipeline(key.slice(3), me.username); });
-  return {account: '@' + me.username, repos, sessions, observed};
+  return {account: '@' + me.username, repos, sessions, observed, failed};
 }
 
 async function scan(opts = {}) {
@@ -267,10 +269,11 @@ async function scan(opts = {}) {
   let fixed = 0;
   for (const p of provs) {
     const full = opts.full || !state.lastScan[p];
-    const since = full ? now - 180 * DAY : state.lastScan[p] - 3 * DAY;
+    // Re-read the last 3 days, starting at a session boundary so no session gets cut in two.
+    const since = P.rescanFrom(state.auto.filter(s => s.prov === p), full ? now - 180 * DAY : state.lastScan[p] - 3 * DAY);
     try {
       const r = p === 'gh' ? await scanGitHub(since, now) : await scanGitLab(since, now);
-      state.auto = state.auto.filter(s => s.prov !== p || s.at < since).concat(r.sessions);
+      state.auto = state.auto.filter(s => s.prov !== p || s.at < since || r.failed.has(s.repo)).concat(r.sessions);
       const map = new Map(state.repos.filter(x => x.prov === p).map(x => [x.key, x]));
       for (const x of r.repos) map.set(x.key, x);
       state.repos = state.repos.filter(x => x.prov !== p).concat([...map.values()]);
@@ -354,7 +357,7 @@ function renderLog() {
   const rows = D.sorted.map(s => ({t: s.at, s})).concat(state.events.map(e => ({t: e.at, e}))).sort((a, b) => b.t - a.t).slice(0, 40);
   $('#logempty').hidden = rows.length > 0;
   $('#loglist').innerHTML = rows.map(({s, e}) => {
-    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${e.xp}</span><span></span></li>`;
+    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${D.gain[e.id] || 0}</span><span></span></li>`;
     const late = new Date(s.at).getHours() < 5;
     const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).join(' · ');
     const where = s.auto ? esc(s.note) : (s.sample ? 'sample' : 'manual');
@@ -362,7 +365,7 @@ function renderLog() {
   }).join('');
   $('#rules').innerHTML = Object.keys(FORMS).map(k => `<li><b>${FORMS[k].name}</b>: ${esc(FORMS[k].rule)}</li>`).join('')
     + Object.keys(MUTATIONS).map(k => `<li><b>${MUTATIONS[k].name}</b> (rare): ${esc(MUTATIONS[k].rule)}</li>`).join('')
-    + '<li><b>Sick</b>: a red CI run in a repo you touched in the last 14 days. Fixing it earns +15 XP.</li>';
+    + `<li><b>Sick</b>: a red CI run in a repo you touched in the last 14 days. Turning the same branch green earns +${P.FIX_XP} XP, once a day per repo.</li>`;
 }
 function renderSetup() {
   $('#previewnote').hidden = !!wv;

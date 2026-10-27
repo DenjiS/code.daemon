@@ -31,6 +31,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PET_TOKEN: ${{ secrets.PET_TOKEN }}   # optional: classic token with repo + read:user
+          PET_SALT: ${{ secrets.PET_SALT }}     # optional: random string that hides private repo names in state.json
           PET_NAME: dmn
           PET_THEME: classic                     # classic, demonic or succubus
           TZ: Europe/Istanbul                    # your time zone, for late nights and streak days
