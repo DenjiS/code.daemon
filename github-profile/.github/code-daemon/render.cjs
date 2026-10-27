@@ -12,7 +12,7 @@
                   and replacing the token makes old private entries look like new repos.
     PET_LOGIN     GitHub login. Defaults to the repository owner.
     PET_NAME      Pet name shown on the card (default dmn).
-    PET_THEME     classic (default), demonic or succubus.
+    PET_THEME     classic (default), derp, demonic or succubus.
     PET_OUT       Output folder (default code-daemon).
     TZ            Time zone used for late-night sessions and streak days.
 */
@@ -27,7 +27,7 @@ const token = process.env.PET_TOKEN || process.env.GITHUB_TOKEN;
 const login = process.env.PET_LOGIN || process.env.GITHUB_REPOSITORY_OWNER;
 const petName = String(process.env.PET_NAME || 'dmn').slice(0, 16);
 const petTheme = String(process.env.PET_THEME || 'classic').toLowerCase().trim();
-if (petTheme !== 'classic') {
+if (!P.hasTheme(petTheme)) {  // classic and derp are drawn by pet-core; sprite themes live in themes/
   const file = path.join(__dirname, 'themes', petTheme.replace(/[^a-z0-9-]/g, '') + '.js');
   if (fs.existsSync(file)) P.registerTheme(petTheme, require(file));
   else console.warn(`Theme "${petTheme}" not found in .github/code-daemon/themes, using classic.`);

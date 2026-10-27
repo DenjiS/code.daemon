@@ -57,23 +57,28 @@ The pet is drawn on a 64 × 48 dot-matrix grid from shaded body parts, so each s
 
 ## Themes
 
-![Classic, Demonic and Succubus themes in the widget](docs/themes.png)
+![Classic, Derpy, Demonic and Succubus themes in the widget](docs/themes.png)
 
 Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, forms and vitals are the same in every theme; only the look changes.
 
 | Theme | Look | Stages |
 | --- | --- | --- |
 | Classic | Shaded creatures in your affinity color | slime → crawler → biped → kaiju → runner → wyrm → imp → wyvern → dragon → ascended |
+| Derpy | The Classic line drawn badly on purpose: googly eyes that wander off on their own, buck teeth, tongues out | leggy egg → blep → crab → potato → derpasaur → sausage → noodle → gremlin → long boi → chonk → big eye |
 | Demonic | Hell-red sprites on a dark red screen | obsidian egg → shadow slime → spider imp → impling → hell kaiju → hellhound → hell serpent → demon → infernal wyvern → archdemon → void lord |
 | Succubus | Succubus line, recolored per affinity (GitHub blue, GitLab orange, Local teal, Unity green, Unreal violet) | heart egg → imp slime → bat imp → chibi imp → chibi succubus → young succubus → lamia → succubus → flying succubus → succubus queen → ascended |
 
 Sprite themes keep the status effects: sick tint and alarm, sleep Z's, shiny sparkles, crown, curse marks, and a small accessory per form (shield, wrench, moon, crate, fire, source swatches, notes).
 
+Derpy keeps everything Classic has, including the crests, and adds its own bits: drool, a forked tongue, a fiddler-crab claw, a snot bubble on the chonk.
+
+![Derpy stages: leggy egg, blep, crab, potato, derpasaur, sausage, noodle, gremlin, long boi, chonk, big eye](docs/derpy.png)
+
 To add a theme, draw an 11 × 4 sheet of 64 × 48 frames (rows = stages, columns = animation frames), convert it to `ui/themes/<id>.js` in the same format, add a `<script>` tag in `widget.html` and an entry in `THEME_LIST` in `pet-core.js`.
 
 ## GitHub profile pet
 
-See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `demonic` or `succubus`.
+See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `demonic` or `succubus`.
 
 ## Data
 
