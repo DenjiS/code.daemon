@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>code.daemon</title>
+<style>
+@font-face{font-family:"Martian Mono";src:url("fonts/martian-mono-latin-700-normal.woff2") format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("fonts/geist-mono-latin-400-normal.woff2") format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url("fonts/geist-mono-latin-500-normal.woff2") format("woff2");font-weight:500;font-display:swap}
+/* Layout: 300px desktop widget. Title bar, pet screen, vitals; a fold-out Feed / Log / Setup panel below. */
+:root{
+  --bg:#ECEEF2; --panel:#F8F9FB; --ink:#11151B; --muted:#596272; --line:#D2D7DF; --track:#E1E5EB;
+  --screen:#0D1015; --screen-dot:#181D25; --screen-ink:#AEB8C6;
+  --good:#1F8A57; --warn:#A87410; --bad:#C43D35;
+  --src-github:#4B5BD6; --src-gitlab:#C9561F; --src-local:#0D877A; --src-unity:#5A8414; --src-unreal:#A23AB8;
+  --aff:var(--muted);
+  --f-display:"Martian Mono", "Cascadia Mono", Consolas, monospace;
+  --f-mono:"Geist Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1116; --panel:#151920; --ink:#E3E7ED; --muted:#8C95A4; --line:#272D37; --track:#20262F;
+    --screen:#080A0E; --screen-dot:#141820; --screen-ink:#9AA5B5;
+    --good:#49C383; --warn:#E3AE3C; --bad:#EF6B60;
+    --src-github:#8E9BFF; --src-gitlab:#FF9B5E; --src-local:#4ADBC3; --src-unity:#B4E15C; --src-unreal:#E78CF7;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1116; --panel:#151920; --ink:#E3E7ED; --muted:#8C95A4; --line:#272D37; --track:#20262F;
+  --screen:#080A0E; --screen-dot:#141820; --screen-ink:#9AA5B5;
+  --good:#49C383; --warn:#E3AE3C; --bad:#EF6B60;
+  --src-github:#8E9BFF; --src-gitlab:#FF9B5E; --src-local:#4ADBC3; --src-unity:#B4E15C; --src-unreal:#E78CF7;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--panel)}
+body{color:var(--ink);font-family:var(--f-mono);font-size:12px;line-height:1.45;-webkit-font-smoothing:antialiased;user-select:none;box-shadow:inset 0 0 0 1px var(--line);border-radius:8px}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+[hidden]{display:none!important}
+.app{display:flex;flex-direction:column}
+
+.bar{height:32px;display:flex;align-items:center;gap:2px;padding:0 6px 0 12px}
+.logo{font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:-.02em;display:flex;align-items:center;gap:7px;pointer-events:none}
+.logo i{width:7px;height:7px;border-radius:2px;background:var(--aff)}
+.logo b{color:var(--aff)}
+.grow{flex:1}
+.ib{width:24px;height:24px;display:grid;place-items:center;border:0;background:none;border-radius:5px;color:var(--muted);cursor:pointer;padding:0}
+.ib:hover{background:var(--track);color:var(--ink)}
+.ib svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+.ib[aria-expanded="true"] svg{transform:rotate(180deg)}
+.ib.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.main{display:grid;gap:9px;padding:0 10px 10px}
+.screen{position:relative;border-radius:6px;background:var(--screen);overflow:hidden;aspect-ratio:4/3;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--screen-ink) 12%,transparent)}
+.screen canvas{display:block;width:100%;height:100%}
+.screen::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0 3px,color-mix(in srgb,var(--screen) 22%,transparent) 3px 4px)}
+.hud{position:absolute;inset:7px 9px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none;font-size:10px;letter-spacing:.07em;color:var(--screen-ink);z-index:1}
+.hrow{display:flex;justify-content:space-between;gap:6px}
+#hudstatus{letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.fx{position:absolute;left:50%;top:16%;transform:translateX(-50%);font-family:var(--f-display);font-weight:700;font-size:17px;white-space:nowrap;pointer-events:none;z-index:2;text-shadow:0 0 12px currentColor}
+.fx.go{animation:rise 1.6s ease-out forwards}
+.fx.evo{top:40%;font-size:14px;letter-spacing:.04em}
+@keyframes rise{0%{opacity:0;transform:translate(-50%,8px)}15%{opacity:1}100%{opacity:0;transform:translate(-50%,-26px)}}
+
+.idrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.petname{font-family:var(--f-display);font-weight:700;font-size:16px;letter-spacing:-.03em;line-height:1.2;background:none;border:0;padding:0;cursor:pointer;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+.petnameinput{font-family:var(--f-display);font-weight:700;font-size:14px;width:150px;padding:1px 5px;border:1px solid var(--line);border-radius:5px;background:var(--bg)}
+.pill{font-size:10.5px;letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid color-mix(in srgb,var(--aff) 45%,var(--line));background:color-mix(in srgb,var(--aff) 12%,var(--panel));white-space:nowrap}
+.formrow{font-size:10.5px;color:var(--muted);margin-top:-5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.formrow b{color:var(--ink);font-weight:500}
+.formrow .mut{color:#C9A227;letter-spacing:.06em}
+.xprow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-top:-3px}
+.xpbar{height:5px;border-radius:2px;background:var(--track);overflow:hidden}
+.xpbar i{display:block;height:100%;width:0;background:var(--aff);transition:width .6s ease}
+.xpcap{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.vitals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 16px}
+.vital .top{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.07em;color:var(--muted)}
+.vital .top b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:0}
+.vital .track{height:4px;border-radius:2px;background:var(--track);overflow:hidden;margin-top:4px}
+.vital .track i{display:block;height:100%;background:var(--good);transition:width .6s ease}
+.vital[data-lv="mid"] .track i{background:var(--warn)}
+.vital[data-lv="low"] .track i{background:var(--bad)}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px;min-height:31px}
+.foot span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foot .err{color:var(--bad)}
+
+.panel{border-top:1px solid var(--line);display:flex;flex-direction:column}
+.tabs{display:flex;gap:2px;padding:4px 10px 0}
+.tabs button{flex:1;border:0;background:none;color:var(--muted);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:7px 0 6px;border-bottom:2px solid transparent;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--aff)}
+.tabbody{height:276px;overflow-y:auto;padding:10px 10px 12px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.tab{display:grid;gap:9px;align-content:start}
+.hint{margin:0;font-size:10.5px;color:var(--muted);line-height:1.5;user-select:text}
+.hint a,.link{color:var(--ink);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:2px;background:none;border:0;padding:0;cursor:pointer;font-size:inherit}
+.hint code{font-family:inherit;color:var(--ink)}
+.lbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.chip span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid var(--line);border-radius:5px;font-size:11px;cursor:pointer;background:var(--bg)}
+.chip span::before{content:"";width:6px;height:6px;border-radius:2px;background:var(--c,var(--muted))}
+.chip.hab span::before{border-radius:50%;background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.chip span em{font-style:normal;color:var(--muted);font-size:10px}
+.chip input:checked+span{border-color:var(--c,var(--ink));background:color-mix(in srgb,var(--c,var(--ink)) 13%,var(--panel))}
+.chip.hab input:checked+span::before{background:var(--ink);box-shadow:none}
+.chip input:focus-visible+span{outline:2px solid var(--ink);outline-offset:1px}
+.frow{display:flex;align-items:center;gap:5px}
+.frow .lbl{width:58px;flex:none}
+.inp{font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:var(--bg);min-width:0;width:100%;user-select:text}
+.num{width:58px;flex:none;text-align:right}
+.preset{font-size:11px;padding:4px 6px;border:1px dashed var(--line);border-radius:5px;background:none;color:var(--muted);cursor:pointer}
+.preset:hover{color:var(--ink);border-color:var(--ink)}
+.step{width:24px;height:26px;border:1px solid var(--line);background:var(--panel);border-radius:5px;cursor:pointer}
+.pv{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-top:1px dashed var(--line);padding-top:8px;font-size:10.5px;color:var(--muted)}
+.pv b{font-family:var(--f-display);font-size:14px;color:var(--ink);white-space:nowrap}
+.btn{font-weight:500;font-size:12px;padding:8px 10px;border-radius:5px;border:1px solid var(--ink);background:var(--ink);color:var(--panel);cursor:pointer;width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.sbtn{font-size:11px;padding:5px 9px;border-radius:5px;border:1px solid var(--line);background:var(--bg);cursor:pointer;white-space:nowrap}
+.sbtn:hover{border-color:var(--ink)}
+.sbtn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.msg{margin:0;font-size:10.5px;color:var(--muted);min-height:1.4em}
+
+.log{list-style:none;margin:0;padding:0;display:grid}
+.lrow{display:grid;grid-template-columns:8px minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.lrow:last-child{border-bottom:0}
+.ldot{width:7px;height:7px;border-radius:2px;background:var(--c)}
+.l1{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.l1 b{font-weight:500}
+.l2{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lxp{font-size:11px;font-variant-numeric:tabular-nums}
+.x{border:0;background:none;color:var(--muted);cursor:pointer;padding:0 2px;font-size:12px;line-height:1}
+.x:hover{color:var(--bad)}
+.x.arm{color:var(--bad)}
+
+.acct{display:grid;gap:6px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.ahead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.aname{display:flex;align-items:center;gap:6px;font-weight:500}
+.aname i{width:7px;height:7px;border-radius:2px;background:var(--c)}
+.astate{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.astate.ok{color:var(--good)}
+.astate.err{color:var(--bad);white-space:normal}
+.arow{display:flex;gap:5px}
+.repos{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.repo{display:grid;grid-template-columns:7px minmax(0,1fr) auto auto 74px;gap:6px;align-items:center;font-size:11px}
+.repo .rn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.repo .rc{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.repo select{font-size:10.5px;padding:2px 3px;border:1px solid var(--line);border-radius:4px;background:var(--bg);width:74px}
+.ci{font-size:10px;font-variant-numeric:tabular-nums}
+.ci.pass{color:var(--good)}.ci.fail{color:var(--bad);font-weight:500}.ci.run{color:var(--warn)}.ci.none{color:var(--muted)}
+.evo{font-size:10.5px;color:var(--muted);line-height:1.6;border-bottom:1px solid var(--line);padding-bottom:8px}
+.evo b{color:var(--ink);font-weight:500}
+.rules{font-size:10.5px;color:var(--muted)}
+.rules summary{cursor:pointer;color:var(--ink)}
+.rules ul{margin:6px 0 0;padding-left:14px;display:grid;gap:3px;user-select:text}
+.rules li b{color:var(--ink);font-weight:500}
+.tog{display:flex;align-items:center;gap:7px;font-size:11.5px;cursor:pointer}
+.tog input{accent-color:var(--ink);margin:0}
+.sub{margin:2px 0 0;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:400;display:flex;justify-content:space-between}
+@media (prefers-reduced-motion: reduce){.fx.go{animation-duration:.01s}.ib.spin svg{animation:none}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar" id="bar">
+    <span class="logo"><i></i><span>code<b>.</b>daemon</span></span>
+    <span class="grow"></span>
+    <button class="ib" id="b-more" type="button" title="Feed, log and setup" aria-expanded="false" aria-controls="panel"><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+    <button class="ib" id="b-hide" type="button" title="Hide to tray (click the tray icon to bring it back)"><svg viewBox="0 0 12 12"><path d="M2.5 6h7"/></svg></button>
+  </header>
+
+  <main class="main">
+    <div class="screen" id="screen" title="Drag to move">
+      <canvas id="pet" role="img" aria-label="Pet egg"></canvas>
+      <div class="hud" aria-hidden="true">
+        <div class="hrow"><span id="hudstage">EGG · 0/5</span><span id="hudup">no signal</span></div>
+        <div class="hrow"><span id="hudstatus">&gt; booting daemon…</span></div>
+      </div>
+      <div class="fx" id="xpfx" hidden></div>
+      <div class="fx evo" id="evofx" hidden></div>
+    </div>
+    <div class="idrow">
+      <button class="petname" id="petname" type="button" title="Rename">dmn</button>
+      <input class="petnameinput" id="petnameinput" maxlength="16" aria-label="Pet name" hidden>
+      <span class="pill" id="pill">EGG 0/5</span>
+    </div>
+    <div class="formrow" id="formrow">form locks at PROCESS</div>
+    <div class="xprow"><div class="xpbar"><i id="xpfill"></i></div><span class="xpcap" id="xpcap">0 / 60 XP</span></div>
+    <div class="vitals" id="vitals"></div>
+    <div class="foot"><span id="sync">connecting…</span><button class="ib" id="b-scan" type="button" title="Rescan GitHub / GitLab now"><svg viewBox="0 0 12 12"><path d="M9.6 6.4A3.6 3.6 0 1 1 8.5 3.3M9.4 1.6v2.2H7.2"/></svg></button></div>
+  </main>
+
+  <section class="panel" id="panel" hidden>
+    <nav class="tabs" role="tablist">
+      <button role="tab" type="button" data-tab="feed" aria-selected="true">Feed</button>
+      <button role="tab" type="button" data-tab="log" aria-selected="false">Log</button>
+      <button role="tab" type="button" data-tab="setup" aria-selected="false">Setup</button>
+    </nav>
+    <div class="tabbody">
+      <form class="tab" id="tab-feed" autocomplete="off" novalidate>
+        <p class="hint">Commits arrive on their own. Log the work that never hits a remote: local scripts, Blueprint tweaks, reviews.</p>
+        <div class="chips" id="srcs"></div>
+        <div class="frow"><span class="lbl">Minutes</span><input class="inp num" id="min" type="number" min="5" max="720" step="5" value="50" aria-label="Minutes"><button class="preset" type="button" data-min="25">25</button><button class="preset" type="button" data-min="50">50</button><button class="preset" type="button" data-min="90">90</button><button class="preset" type="button" data-min="180">180</button></div>
+        <div class="frow"><span class="lbl">Commits</span><button class="step" type="button" data-step="-1" aria-label="One fewer commit">−</button><input class="inp num" id="commits" type="number" min="0" max="99" value="0" aria-label="Commits" style="text-align:center"><button class="step" type="button" data-step="1" aria-label="One more commit">+</button></div>
+        <div class="chips">
+          <label class="chip hab"><input type="checkbox" id="h-tests"><span>tests <em>+12</em></span></label>
+          <label class="chip hab"><input type="checkbox" id="h-bug"><span>bug fix <em>+10</em></span></label>
+          <label class="chip hab"><input type="checkbox" id="h-ship"><span>shipped <em>+20</em></span></label>
+        </div>
+        <div class="pv"><span id="pvdetail"></span><b id="pvxp">+0 XP</b></div>
+        <button class="btn" id="feedbtn" type="submit">Feed session</button>
+        <p class="msg" id="feedmsg" role="status" aria-live="polite"></p>
+      </form>
+
+      <div class="tab" id="tab-log" hidden>
+        <div class="evo" id="evo"></div>
+        <ul class="log" id="loglist"></ul>
+        <p class="hint" id="logempty" hidden>No sessions yet. Connect GitHub or GitLab in Setup, or feed one by hand.</p>
+        <details class="rules"><summary>How forms and mutations work</summary><ul id="rules"></ul></details>
+      </div>
+
+      <div class="tab" id="tab-setup" hidden>
+        <p class="hint" id="previewnote" hidden>Preview mode. Start the widget with “Start code.daemon.vbs” to connect accounts.</p>
+        <section class="acct" style="--c:var(--src-github)">
+          <div class="ahead"><span class="aname"><i></i>GitHub</span><span class="astate" id="gh-state">not connected</span></div>
+          <div class="arow"><input class="inp" id="gh-token" type="password" placeholder="ghp_… or github_pat_…" spellcheck="false" autocomplete="off" aria-label="GitHub token"><button class="sbtn" id="gh-save" type="button">Connect</button></div>
+          <p class="hint">Classic token with <code>repo</code> scope. Fine-grained works too: Contents, Metadata, Commit statuses and Actions, all read-only. <a href="https://github.com/settings/tokens/new?scopes=repo,read:user&amp;description=code.daemon" target="_blank" rel="noopener">Create one</a><span id="gh-clearwrap" hidden> · <button class="link" id="gh-clear" type="button">Disconnect</button></span></p>
+        </section>
+        <section class="acct" style="--c:var(--src-gitlab)">
+          <div class="ahead"><span class="aname"><i></i>GitLab</span><span class="astate" id="gl-state">not connected</span></div>
+          <input class="inp" id="gl-url" type="url" value="https://gitlab.com" spellcheck="false" aria-label="GitLab address">
+          <div class="arow"><input class="inp" id="gl-token" type="password" placeholder="glpat-…" spellcheck="false" autocomplete="off" aria-label="GitLab token"><button class="sbtn" id="gl-save" type="button">Connect</button></div>
+          <p class="hint">Personal access token with <code>read_api</code> and <code>read_user</code>. <a id="gl-link" href="https://gitlab.com/-/user_settings/personal_access_tokens?name=code.daemon&amp;scopes=read_api,read_user" target="_blank" rel="noopener">Create one</a><span id="gl-clearwrap" hidden> · <button class="link" id="gl-clear" type="button">Disconnect</button></span></p>
+        </section>
+        <div class="arow" style="align-items:center"><button class="sbtn" id="scan2" type="button">Rescan now</button><button class="sbtn" id="scanfull" type="button" title="Re-read the last 180 days">Full rescan</button></div>
+        <p class="hint" id="scaninfo"></p>
+        <h3 class="sub"><span>Repos with your commits</span><span id="repocount"></span></h3>
+        <p class="hint">CI column: latest run on the branch you pushed last. A red build in a repo you touched this fortnight makes the pet sick; turning it green earns +15 XP.</p>
+        <ul class="repos" id="repos"></ul>
+        <p class="hint">Unity and Unreal repos are detected from <code>ProjectSettings/</code> + <code>Assets/</code> and <code>*.uproject</code>. Pick a source to override.</p>
+        <label class="tog"><input type="checkbox" id="t-top"> Always on top</label>
+        <label class="tog"><input type="checkbox" id="t-auto"> Start with Windows</label>
+        <div class="arow"><button class="sbtn" id="b-data" type="button">Open save folder</button><button class="sbtn danger" id="b-quit" type="button">Quit</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="pet-core.js"></script>
+<script src="widget.js"></script>
+</body>
+</html>
