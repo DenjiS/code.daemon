@@ -2,11 +2,12 @@
   code.daemon pet engine. Shared by the desktop widget (ui/widget.html) and the
   GitHub profile Action (render.cjs). No dependencies; works in a browser and in Node.
 
-  - XP and stages, replayed in time order
+  - XP with diminishing returns and a daily soft cap, replayed in time order
+  - 11 stages, each with its own creature body
   - branching forms, locked at the moment each evolution happens
   - rare mutations from your whole history
   - build health from CI results, with a bonus when you fix a red build
-  - the 40 x 30 pixel pet, and an animated SVG card for a README
+  - a 64 x 48 pixel renderer built from shaded body parts, and an animated SVG card
 */
 (function (root) {
 'use strict';
@@ -21,9 +22,20 @@ const SOURCES = [
 ];
 const SRC = Object.fromEntries(SOURCES.map(s => [s.id, s]));
 const STAGES = [
-  {name: 'EGG', xp: 0}, {name: 'BIT', xp: 60}, {name: 'BYTE', xp: 200},
-  {name: 'PROCESS', xp: 500}, {name: 'DAEMON', xp: 1100}, {name: 'KERNEL', xp: 2400},
+  {name: 'EGG',         xp: 0,     body: 'Egg'},
+  {name: 'BIT',         xp: 60,    body: 'Slime'},
+  {name: 'NIBBLE',      xp: 250,   body: 'Crawler'},
+  {name: 'BYTE',        xp: 650,   body: 'Biped'},
+  {name: 'WORD',        xp: 1300,  body: 'Kaiju'},
+  {name: 'PROCESS',     xp: 2300,  body: 'Runner'},
+  {name: 'THREAD',      xp: 3800,  body: 'Wyrm'},
+  {name: 'DAEMON',      xp: 5800,  body: 'Imp'},
+  {name: 'SERVICE',     xp: 8500,  body: 'Wyvern'},
+  {name: 'KERNEL',      xp: 13000, body: 'Dragon'},
+  {name: 'SINGULARITY', xp: 30000, body: 'Ascended'},
 ];
+const MAX_STAGE = STAGES.length - 1;
+const CREST_STAGE = 2, FORM_STAGE = 4;
 const FORMS = {
   core:     {name: 'Core',      rule: 'Balanced habits'},
   guardian: {name: 'Guardian',  rule: 'Tests in 30%+ of sessions: carries a shield'},
@@ -32,23 +44,28 @@ const FORMS = {
   shipper:  {name: 'Shipper',   rule: '3+ shipped sessions in 30 days: keeps a crate with a flag'},
   streaker: {name: 'Streaker',  rule: '7+ day streak when it evolved: trails fire'},
   polyglot: {name: 'Polyglot',  rule: '4+ sources in 30 days: striped in their colors'},
+  vibe:     {name: 'Vibecoder', rule: '10+ commits per session on average: headphones and floating notes'},
 };
 const MUTATIONS = {
   shiny:   {name: 'Shiny',   rule: 'Coded 30 days in a row at some point'},
   cursed:  {name: 'Cursed',  rule: 'Coded on a Friday the 13th'},
   crowned: {name: 'Crowned', rule: '1000 commits'},
 };
-const GEOM = [null, {rx: 4.5, ry: 3.5}, {rx: 6.5, ry: 5}, {rx: 7.5, ry: 6}, {rx: 9, ry: 7}, {rx: 10.5, ry: 8}];
 const PET = {github: '#8E9BFF', gitlab: '#FF9B5E', local: '#4ADBC3', unity: '#B4E15C', unreal: '#E78CF7', none: '#C7CFDA'};
 const FIX_XP = 15;
+const DAY_SOFT_CAP = 90, OVER_CAP_RATE = 0.15;
 const RX_BUG = /\b(fix(e[sd])?|bug(fix)?|hotfix|patch(ed)?|resolve[sd]?)\b/i;
 const RX_TEST = /\b(tests?|testing|specs?|e2e)\b/i;
 const RX_REL = /\b(release[sd]?|bump(ed)? version|v\d+\.\d+(\.\d+)?)\b/i;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dayIdx = ms => { const d = new Date(ms); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY); };
-const baseXP = s => Math.min(s.min, 480) / 3 + Math.min(s.commits || 0, 30) * 4 + (s.tests ? 12 : 0) + (s.bug ? 10 : 0) + (s.ship ? 20 : 0);
-const mult = st => 1 + 0.05 * Math.min(st, 10);
+// One session's XP before streak and daily cap. Long sessions and commit bursts grow slowly on purpose.
+const sessionXP = s => 12 * Math.log(1 + Math.min(s.min, 480) / 20) + 7 * Math.sqrt(Math.min(s.commits || 0, 50))
+  + (s.tests ? 8 : 0) + (s.bug ? 6 : 0) + (s.ship ? 15 : 0);
+const baseXP = sessionXP;
+const mult = st => 1 + 0.03 * Math.min(st, 10);
+const softCap = v => v <= DAY_SOFT_CAP ? v : DAY_SOFT_CAP + (v - DAY_SOFT_CAP) * OVER_CAP_RATE;
 const valid = s => !!(s && SRC[s.src] && Number.isFinite(s.min) && s.min > 0 && Number.isFinite(s.at));
 const isLate = ms => { const h = new Date(ms).getHours(); return h >= 23 || h < 5; };
 
@@ -66,6 +83,7 @@ function traitAt(seen, t) {
     shipper: w.filter(s => s.ship).length / 3,
     streaker: streak / 7,
     polyglot: new Set(w.map(s => s.src)).size / 4,
+    vibe: (w.reduce((a, s) => a + (s.commits || 0), 0) / n) / 10,
   };
   let best = 'core', bv = 1;
   for (const k in score) if (score[k] >= bv && score[k] > (score[best] || 0)) { best = k; bv = score[k]; }
@@ -79,7 +97,7 @@ function derive(list, now, extra) {
   const events = (extra.events || []).filter(e => e && Number.isFinite(e.at) && Number.isFinite(e.xp));
   const sorted = list.filter(valid).sort((a, b) => a.at - b.at);
   const items = sorted.map(s => ({t: s.at, s})).concat(events.map(e => ({t: e.at, e}))).sort((a, b) => a.t - b.t);
-  const days = new Set(), gain = {}, src30 = {}, srcAll = {}, forms = {}, seen = [];
+  const days = new Set(), dayRaw = new Map(), gain = {}, mults = {}, src30 = {}, srcAll = {}, forms = {}, seen = [];
   let xp = 0, commits = 0, maxStreak = 0, fri13 = false, stage = 0, fixes = 0;
   for (const it of items) {
     if (it.s) {
@@ -87,15 +105,17 @@ function derive(list, now, extra) {
       days.add(d);
       let st = 0; while (days.has(d - st)) st++;
       if (st > maxStreak) maxStreak = st;
-      const g = Math.round(baseXP(s) * mult(st));
-      gain[s.id] = g; xp += g; commits += s.commits || 0;
+      const before = dayRaw.get(d) || 0, raw = sessionXP(s) * mult(st);
+      dayRaw.set(d, before + raw);
+      const g = Math.max(1, Math.round(softCap(before + raw) - softCap(before)));
+      gain[s.id] = g; mults[s.id] = mult(st); xp += g; commits += s.commits || 0;
       srcAll[s.src] = (srcAll[s.src] || 0) + g;
       if (now - s.at < 30 * DAY) src30[s.src] = (src30[s.src] || 0) + g;
       const dt = new Date(s.at);
       if (dt.getDay() === 5 && dt.getDate() === 13) fri13 = true;
       seen.push(s);
     } else { xp += it.e.xp; gain[it.e.id] = it.e.xp; fixes++; }
-    while (stage < 5 && xp >= STAGES[stage + 1].xp) { stage++; if (stage >= 3) forms[stage] = traitAt(seen, it.t); }
+    while (stage < MAX_STAGE && xp >= STAGES[stage + 1].xp) { stage++; if (stage >= FORM_STAGE) forms[stage] = traitAt(seen, it.t); }
   }
   const today = dayIdx(now);
   const start = days.has(today) ? today : (days.has(today - 1) ? today - 1 : null);
@@ -120,26 +140,33 @@ function derive(list, now, extra) {
   const health = clamp(100 - 45 * failing.length - 15 * longFail, 0, 100);
 
   return {
-    sorted, gain, xp, commits, streak, maxStreak, codedToday: days.has(today), days, energy, mood, rest, late, variety,
-    affinity, srcs30, stage, forms, form: stage >= 3 ? (forms[stage] || 'core') : null,
+    sorted, gain, mults, xp, commits, streak, maxStreak, codedToday: days.has(today), days, dayRaw, energy, mood, rest, late, variety,
+    affinity, srcs30, stage, forms, form: stage >= FORM_STAGE ? (forms[stage] || 'core') : null,
     mutations: {shiny: maxStreak >= 30, cursed: fri13, crowned: commits >= 1000},
     health, failing, ciTracked: tracked.length, ciPassing: tracked.filter(k => ci[k].s === 'pass').length, fixes,
     sick: failing.length > 0, critical: health < 30,
     last: sorted.length ? sorted[sorted.length - 1].at : null, count: sorted.length,
   };
 }
+// XP a new session would earn right now, given what D already counted today.
+function gainFor(D, s) {
+  const d = dayIdx(s.at), days = new Set(D.days); days.add(d);
+  let st = 0; while (days.has(d - st)) st++;
+  const before = (D.dayRaw && D.dayRaw.get(d)) || 0, raw = sessionXP(s) * mult(st);
+  return {xp: Math.max(1, Math.round(softCap(before + raw) - softCap(before))), mult: mult(st), capped: before + raw > DAY_SOFT_CAP, base: Math.round(sessionXP(s))};
+}
 
 function statusLine(D, opts) {
   opts = opts || {};
   const name = opts.label || (k => String(k || '').replace(/^g[hl]:/, ''));
   if (!D.count) return opts.empty || '> egg found. waiting for commits';
-  if (D.stage === 0) return `> incubating · ${60 - D.xp} XP to hatch`;
+  if (D.stage === 0) return `> incubating · ${STAGES[1].xp - D.xp} XP to hatch`;
   if (D.failing.length) return `> sick · CI failing in ${name(D.failing[0])}${D.failing.length > 1 ? ` +${D.failing.length - 1}` : ''}`;
   if (D.energy < 20) return '> asleep · feed it a commit';
   if (D.rest < 50) return `> tired · ${D.late} late night${D.late === 1 ? '' : 's'} this week`;
   if (D.streak >= 2 && !D.codedToday) return `> streak ${D.streak}d at risk · code today`;
-  if (D.stage < 5) { const n = STAGES[D.stage + 1]; return `> ${n.xp - D.xp} XP to ${n.name.toLowerCase()}`; }
-  return `> kernel mode · ${D.xp} XP`;
+  if (D.stage < MAX_STAGE) { const n = STAGES[D.stage + 1]; return `> ${n.xp - D.xp} XP to ${n.name.toLowerCase()}`; }
+  return `> singularity · ${D.xp} XP`;
 }
 
 /* ---------- commits -> sessions ---------- */
@@ -199,7 +226,6 @@ function updateCI(prev, observed, now) {
 
 /* ---------- GitHub (GraphQL) ---------- */
 const Q_REPO = `query($owner:String!,$name:String!,$since:GitTimestamp!,$uid:ID!){repository(owner:$owner,name:$name){isPrivate object(expression:"HEAD:"){... on Tree{entries{name type}}} refs(refPrefix:"refs/heads/",first:20,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{target{... on Commit{committedDate statusCheckRollup{state} history(first:100,since:$since,author:{id:$uid}){nodes{oid authoredDate messageHeadline}}}}}} releases(first:10,orderBy:{field:CREATED_AT,direction:DESC}){nodes{publishedAt}}}}`;
-// gql(query, variables) -> data. Returns {repo, sessions, ci} or null when you have no commits there.
 async function scanGitHubRepo(gql, nameWithOwner, since, uid, overrides) {
   const parts = nameWithOwner.split('/');
   const d = await gql(Q_REPO, {owner: parts[0], name: parts[1], since: new Date(since).toISOString(), uid});
@@ -224,47 +250,245 @@ async function scanGitHubRepo(gql, nameWithOwner, since, uid, overrides) {
   return {repo, sessions: toSessions(repo, commits, rel, overrides), ci: head && head.s ? {s: head.s, at: head.at} : null};
 }
 
-/* ---------- pixel pet (40 x 30) ---------- */
-const GW = 40, GH = 30, FLOOR = 25;
-const CUBE = ['..hhh..', 'hhhhhhh', 'bbhhhss', 'bbbbsss', 'bbbbsss', 'bbbbsss', '..bbs..'];
-const ZG = ['####', '..#.', '.#..', '####'];
-const MOON = ['.###.', '##...', '#....', '##...', '.###.'];
-const SHIELD = ['sssss', 'sw+ws', 's+++s', 'sw+ws', '.sws.', '..s..'];
-const CRATE = ['bbbbbb', 'bhbbhb', 'bbhhbb', 'bhbbhb', 'bbbbbb'];
-const FLAME = [['.y.', '.yo', 'oyo', 'ror'], ['y..', 'oy.', 'oyo', 'ror']];
-const CROWN = ['y.y.y', 'yygyy', 'yyyyy'];
+/* ======================================================================
+   Renderer: 64 x 48 cells. Each creature is a list of shaded parts.
+   ====================================================================== */
+const GW = 64, GH = 48, G = 41;  // G = ground row the feet stand on
 const C = {steel: '#A9B8C9', steelDark: '#5C6B7C', white: '#FFFFFF', wood: '#B7834C', woodDark: '#7A5230', moon: '#E8E4C9',
-  red: '#FF5A3C', orange: '#FF9B3C', yellow: '#FFE27A', gold: '#FFD24A', gem: '#FF5A7A', sick: '#8FA08A', drop: '#7FC8FF', alarm: '#FF5A5A', curse: '#FF4D4D', spark: '#FFF6C8'};
-
+  red: '#FF5A3C', orange: '#FF9B3C', yellow: '#FFE27A', gold: '#FFD24A', gem: '#FF5A7A', sick: '#8FA08A', drop: '#7FC8FF',
+  alarm: '#FF5A5A', curse: '#FF4D4D', spark: '#FFF6C8', horn: '#ECE4CF', tongue: '#FF6F7D', note: '#F5F0FF', eyeWhite: '#F2F4F8'};
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 const mix = (a, b, t) => { const A = hex(a), B = hex(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+const K = (x, y) => y * GW + x;
 
-function blob(cx, cy, rx, ry, taper) {
-  const pts = [];
-  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
-    const dy = (y - cy) / ry, k = 1 - dy * dy;
-    if (k < 0.06) continue;
-    const rr = rx * (taper && dy < 0 ? 1 - taper * dy * dy : 1) * Math.sqrt(k);
-    for (let x = Math.ceil(cx - rr - 1e-4); x <= Math.floor(cx + rr + 1e-4); x++) pts.push([x, y]);
-  }
-  return pts;
+/* raster primitives on a Set of cell indexes */
+function px(m, x, y) { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) m.add(K(x, y)); }
+function ellipse(m, cx, cy, rx, ry) {
+  for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+    for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      if (dx * dx + dy * dy <= 1.02) px(m, x, y);
+    }
 }
-function shadeBlob(pts, cx, cy, pal, put, extra) {
-  const S = new Set(pts.map(([x, y]) => y * GW + x));
-  const inS = (x, y) => S.has(y * GW + x);
-  for (const [x, y] of pts) {
-    let c = pal.body;
-    if (!inS(x, y + 1) || (!inS(x + 1, y) && x > cx)) c = pal.shade;
-    else if ((!inS(x, y - 1) && x <= cx) || (!inS(x - 1, y) && y < cy)) c = pal.hi;
-    const e = extra && extra(x, y);
-    if (e && c === pal.body) c = e;
-    put(x, y, c);
-  }
-  return S;
+function ring(m, cx, cy, rx, ry, w) {
+  for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++)
+    for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry, d = Math.sqrt(dx * dx + dy * dy);
+      if (Math.abs(d - 1) * Math.min(rx, ry) <= w / 2) px(m, x, y);
+    }
 }
-const colTop = (S, x) => { for (let y = 0; y < GH; y++) if (S.has(y * GW + x)) return y; return FLOOR; };
-function sprite(put, rows, x0, y0, colors) {
-  rows.forEach((row, j) => { for (let i = 0; i < row.length; i++) { const c = colors[row[i]]; if (c) put(x0 + i, y0 + j, c); } });
+function poly(m, pts) {
+  const ys = pts.map(p => p[1]);
+  for (let y = Math.floor(Math.min(...ys)); y <= Math.ceil(Math.max(...ys)); y++) {
+    const xs = [];
+    for (let i = 0; i < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+      if ((ay <= y && by > y) || (by <= y && ay > y)) xs.push(ax + (y - ay) / (by - ay) * (bx - ax));
+    }
+    xs.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < xs.length; i += 2) for (let x = Math.round(xs[i]); x <= Math.round(xs[i + 1]); x++) px(m, x, y);
+  }
+}
+// tapered thick line from (x0,y0,r0) to (x1,y1,r1)
+function limb(m, x0, y0, x1, y1, r0, r1) {
+  if (r1 === undefined) r1 = r0;
+  const R = Math.max(r0, r1), dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy || 1;
+  for (let y = Math.floor(Math.min(y0, y1) - R); y <= Math.ceil(Math.max(y0, y1) + R); y++)
+    for (let x = Math.floor(Math.min(x0, x1) - R); x <= Math.ceil(Math.max(x0, x1) + R); x++) {
+      const t = clamp(((x - x0) * dx + (y - y0) * dy) / L2, 0, 1);
+      const qx = x0 + t * dx, qy = y0 + t * dy, r = r0 + (r1 - r0) * t;
+      if ((x - qx) * (x - qx) + (y - qy) * (y - qy) <= r * r + 0.15) px(m, x, y);
+    }
+}
+// smooth tapered chain through points [[x,y,r],...]
+function chain(m, pts) { for (let i = 0; i + 1 < pts.length; i++) limb(m, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], pts[i][2], pts[i + 1][2]); }
+
+/* ---------- creature body plans ----------
+   Each returns {parts: [{m, role}], eyes: [{x,y,w,h}], mouth: {x,y,w}, a: anchors}.
+   Roles: body, limb, far, belly, membrane, horn, core. Anchors: head (top of head), side, hold, rear, cube, box, face. */
+function plans(st, f, mo) {
+  const parts = [], P = role => { const m = new Set(); parts.push({m, role}); return m; };
+  const bob = mo.bob, walk = mo.walk, flap = mo.flap, sway = mo.sway;
+  let eyes = [], mouth = null, a = {};
+  const cx = 32;
+  switch (st) {
+    case 1: { // BIT: slime droplet
+      const sq = bob ? 0.8 : 0, rx = 7.5 + sq, ry = 6 - sq, cy = G - ry + 0.5;
+      const b = P('body'); ellipse(b, cx, cy, rx, ry); poly(b, [[cx - 3.5, cy - ry + 2], [cx + 1, cy - ry - 4 + sq], [cx + 3, cy - ry + 2]]);
+      const sh = P('belly'); px(sh, cx - 4, cy - 3); px(sh, cx - 5, cy - 2); px(sh, cx - 4, cy - 2);
+      eyes = [{x: cx - 4, y: cy - 1, w: 2, h: 2}, {x: cx + 2, y: cy - 1, w: 2, h: 2}];
+      mouth = {x: cx - 1, y: cy + 2, w: 2};
+      a = {head: [cx, cy - ry - 3], side: [cx - 9, cy], hold: [cx - 9, cy + 2], rear: [cx - 9, cy], cube: [cx + 12, cy - 12], box: [cx - 9, cy - ry - 4, cx + 9, G]};
+      break;
+    }
+    case 2: { // NIBBLE: crawler with eye stalks and stub legs
+      const cy = G - 8.5 - bob * 0.5;
+      const legs = P('limb');
+      [-8, -3, 3, 8].forEach((o, i) => { const up = ((i + walk) & 1) ? 1 : 0; limb(legs, cx + o, cy + 4, cx + o + (i < 2 ? -1 : 1), G - up, 1.4, 1.2); });
+      const b = P('body'); ellipse(b, cx, cy, 11.5, 6.5);
+      const bel = P('belly'); ellipse(bel, cx, cy + 3, 8, 2.5);
+      const st1 = P('limb'); limb(st1, cx - 3, cy - 5, cx - 6, cy - 12 + bob, 1, 0.8); limb(st1, cx + 3, cy - 5, cx + 6, cy - 12 + bob, 1, 0.8);
+      const eb = P('eyeWhite'); ellipse(eb, cx - 6, cy - 13 + bob, 2.4, 2.4); ellipse(eb, cx + 6, cy - 13 + bob, 2.4, 2.4);
+      eyes = [{x: cx - 6, y: cy - 14 + bob, w: 1, h: 2}, {x: cx + 6, y: cy - 14 + bob, w: 1, h: 2}];
+      mouth = {x: cx - 1, y: cy + 1, w: 3};
+      a = {head: [cx, cy - 7], side: [cx - 13, cy - 1], hold: [cx - 13, cy + 1], rear: [cx - 12, cy], cube: [cx + 14, cy - 18], box: [cx - 12, cy - 16, cx + 12, G]};
+      break;
+    }
+    case 3: { // BYTE: round biped with ears and arms
+      const cy = G - 12.5 - bob;
+      const legs = P('limb'); limb(legs, cx - 4, cy + 7, cx - 5, G - 1, 1.8); limb(legs, cx + 4, cy + 7, cx + 5, G - 1, 1.8);
+      ellipse(legs, cx - 6, G - 0.5, 3, 1.3); ellipse(legs, cx + 6, G - 0.5, 3, 1.3);
+      const ears = P('body'); poly(ears, [[cx - 8, cy - 5], [cx - 10, cy - 13], [cx - 3, cy - 8]]); poly(ears, [[cx + 8, cy - 5], [cx + 10, cy - 13], [cx + 3, cy - 8]]);
+      const b = P('body'); ellipse(b, cx, cy, 10, 9);
+      const bel = P('belly'); ellipse(bel, cx, cy + 3.5, 6, 4.5);
+      const arms = P('limb'); limb(arms, cx - 9, cy + 1, cx - 13, cy + 4 - sway * 4, 1.4, 1.1); limb(arms, cx + 9, cy + 1, cx + 13, cy + 4, 1.4, 1.1);
+      eyes = [{x: cx - 5, y: cy - 3, w: 2, h: 2}, {x: cx + 3, y: cy - 3, w: 2, h: 2}];
+      mouth = {x: cx - 1, y: cy + 1, w: 2};
+      a = {head: [cx, cy - 9], side: [cx - 16, cy + 1], hold: [cx - 13, cy + 4 - sway * 4], rear: [cx - 11, cy], cube: [cx + 15, cy - 12], box: [cx - 13, cy - 13, cx + 13, G]};
+      break;
+    }
+    case 4: { // WORD: upright kaiju chick with a tail
+      const y0 = -bob;
+      const tail = P('limb'); chain(tail, [[cx - 5, G - 8 + y0, 3.2], [cx - 13, G - 5, 2.2], [cx - 19, G - 7 - sway, 1]]);
+      const legs = P('limb'); limb(legs, cx - 4, G - 9 + y0, cx - 5, G - 1, 2.4); limb(legs, cx + 4, G - 9 + y0, cx + 5, G - 1, 2.4);
+      ellipse(legs, cx - 6, G - 0.5, 3.6, 1.4); ellipse(legs, cx + 6, G - 0.5, 3.6, 1.4);
+      const armB = P('far'); limb(armB, cx - 5, G - 16 + y0, cx - 9, G - 12 + y0, 1.3, 1);
+      const b = P('body'); ellipse(b, cx, G - 12.5 + y0, 8, 8.5);
+      const bel = P('belly'); ellipse(bel, cx + 1.5, G - 11 + y0, 5, 6);
+      const head = P('body'); ellipse(head, cx + 1, G - 24 + y0, 8, 6.5); ellipse(head, cx + 7, G - 21.5 + y0, 4.5, 3.2);
+      const sp = P('horn'); [[cx - 5, G - 29], [cx - 1, G - 31], [cx + 3, G - 31]].forEach(([x, y]) => poly(sp, [[x - 1.5, y + 2 + y0], [x, y - 2 + y0], [x + 1.5, y + 2 + y0]]));
+      const armF = P('limb'); limb(armF, cx + 6, G - 16 + y0, cx + 10, G - 12 + y0 - sway * 3, 1.4, 1.1);
+      eyes = [{x: cx + 1, y: G - 26 + y0, w: 2, h: 2}, {x: cx + 6, y: G - 26 + y0, w: 2, h: 2}];
+      mouth = {x: cx + 8, y: G - 21 + y0, w: 3};
+      a = {head: [cx + 1, G - 31 + y0], side: [cx - 14, G - 16], hold: [cx + 11, G - 12 + y0 - sway * 3], rear: [cx - 19, G - 9], cube: [cx + 15, G - 34], box: [cx - 19, G - 33, cx + 13, G]};
+      break;
+    }
+    case 5: { // PROCESS: four-legged runner facing right
+      const y0 = -bob;
+      const tail = P('limb'); chain(tail, [[cx - 13, G - 12 + y0, 2.8], [cx - 19, G - 16, 2], [cx - 22, G - 23 + sway, 1.4], [cx - 20, G - 27 + sway, 1]]);
+      const far = P('far'); limb(far, cx + 4, G - 8 + y0, cx + 3 - walk * 2, G - 1, 1.6); limb(far, cx - 7, G - 8 + y0, cx - 6 + walk * 2, G - 1, 1.6);
+      const b = P('body'); ellipse(b, cx - 2, G - 11 + y0, 13, 6.2);
+      const bel = P('belly'); ellipse(bel, cx - 1, G - 7.5 + y0, 9, 2.4);
+      const legs = P('limb'); limb(legs, cx + 7, G - 8 + y0, cx + 8 + walk * 2, G - 1, 1.8); limb(legs, cx - 10, G - 8 + y0, cx - 11 - walk * 2, G - 1, 1.8);
+      const neck = P('body'); limb(neck, cx + 8, G - 13 + y0, cx + 12, G - 18 + y0, 3.4, 3);
+      const ears = P('body'); poly(ears, [[cx + 10, G - 24 + y0], [cx + 11, G - 31 + y0], [cx + 14, G - 24 + y0]]); poly(ears, [[cx + 15, G - 24 + y0], [cx + 17, G - 30 + y0], [cx + 18, G - 23 + y0]]);
+      const head = P('body'); ellipse(head, cx + 14, G - 20.5 + y0, 6, 5); ellipse(head, cx + 19.5, G - 19 + y0, 4, 2.6);
+      eyes = [{x: cx + 15, y: G - 23 + y0, w: 2, h: 2}];
+      mouth = {x: cx + 20, y: G - 18 + y0, w: 3};
+      a = {head: [cx + 14, G - 25 + y0], side: [cx - 3, G - 13 + y0], hold: [cx + 23, G - 18 + y0], rear: [cx - 22, G - 14], cube: [cx + 22, G - 34], box: [cx - 23, G - 31, cx + 24, G]};
+      break;
+    }
+    case 6: { // THREAD: wyrm, slithering S-curve
+      const ph = mo.phase, N = 16, path = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        path.push([5 + 37 * t, G - 6 - 6.5 * Math.sin(t * 9 - ph) * (1 - t * 0.55) - 12 * t * t, 0.9 + 3.1 * Math.pow(Math.sin(Math.PI * Math.min(t, 0.85) / 0.85), 0.6)]);
+      }
+      const [hx0, hy0] = path[N], hx = hx0 + 3, hy = hy0 - 4;
+      const fr = P('membrane'); poly(fr, [[hx - 3, hy - 1], [hx - 9, hy - 7], [hx - 5, hy - 4], [hx - 6, hy - 10], [hx - 2, hy - 5], [hx + 1, hy - 8], [hx + 1, hy - 3]]);
+      const b = P('body'); chain(b, path); limb(b, hx0, hy0, hx, hy, 3.4, 3.4);
+      const bel = P('belly'); chain(bel, path.slice(2, N - 1).map(([x, y, r]) => [x + 0.5, y + r * 0.55, r * 0.42]));
+      const sp = P('horn'); for (let i = 3; i < N - 1; i += 2) { const [x, y, r] = path[i]; poly(sp, [[x - 1.2, y - r + 0.5], [x - 0.3, y - r - 2.3], [x + 1, y - r + 0.5]]); }
+      const head = P('body'); ellipse(head, hx, hy, 6.5, 4.8); ellipse(head, hx + 5.5, hy + 1.5, 4.5, 2.6);
+      const whisk = P('horn'); chain(whisk, [[hx + 8, hy + 3, 0.5], [hx + 11, hy + 6 - mo.alt, 0.5], [hx + 13, hy + 5, 0.4]]);
+      eyes = [{x: hx, y: hy - 2, w: 2, h: 2}];
+      mouth = {x: hx + 5, y: hy + 2, w: 3, tongue: mo.alt};
+      a = {head: [hx - 1, hy - 5], side: [path[8][0], path[8][1] - 3], hold: [hx + 10, hy + 2], rear: [path[1][0], path[1][1]], cube: [52, 6], box: [5, hy - 10, hx + 10, G]};
+      break;
+    }
+    case 7: { // DAEMON: winged imp
+      const y0 = -bob, fl = flap;
+      const wing = P('membrane');
+      for (const s of [-1, 1]) {
+        const sx = cx + s * 5;
+        poly(wing, [[sx, G - 23 + y0], [sx + s * 13, G - 33 - fl * 2 + y0], [sx + s * 19, G - 26 - fl + y0], [sx + s * 17, G - 19 + y0], [sx + s * 13, G - 21 + y0], [sx + s * 11, G - 16 + y0], [sx + s * 7, G - 19 + y0], [sx + s * 3, G - 15 + y0]]);
+      }
+      const bones = P('limb');
+      for (const s of [-1, 1]) { const sx = cx + s * 5; limb(bones, sx, G - 23 + y0, cx + s * 18, G - 33 - fl * 2 + y0, 0.9, 0.5); limb(bones, cx + s * 18, G - 33 - fl * 2 + y0, cx + s * 24, G - 26 - fl + y0, 0.6, 0.4); }
+      const tail = P('limb'); chain(tail, [[cx + 3, G - 8 + y0, 1.4], [cx + 12, G - 5, 1.1], [cx + 17, G - 10 - sway, 0.8]]);
+      const tip = P('horn'); poly(tip, [[cx + 15, G - 11 - sway], [cx + 18, G - 16 - sway], [cx + 20, G - 10 - sway]]);
+      const legs = P('limb'); limb(legs, cx - 3, G - 9 + y0, cx - 4, G - 1, 2); limb(legs, cx + 3, G - 9 + y0, cx + 4, G - 1, 2);
+      ellipse(legs, cx - 5, G - 0.5, 2.6, 1.2); ellipse(legs, cx + 5, G - 0.5, 2.6, 1.2);
+      const b = P('body'); ellipse(b, cx, G - 14 + y0, 6.5, 7);
+      const bel = P('belly'); ellipse(bel, cx, G - 12.5 + y0, 4, 4.5);
+      const arms = P('limb'); limb(arms, cx - 6, G - 18 + y0, cx - 10, G - 12 + y0 - sway * 4, 1.5, 1.1); limb(arms, cx + 6, G - 18 + y0, cx + 10, G - 12 + y0, 1.5, 1.1);
+      const head = P('body'); ellipse(head, cx, G - 25 + y0, 6, 5.5);
+      poly(head, [[cx - 5, G - 26 + y0], [cx - 9, G - 30 + y0], [cx - 4, G - 29 + y0]]); poly(head, [[cx + 5, G - 26 + y0], [cx + 9, G - 30 + y0], [cx + 4, G - 29 + y0]]);
+      const horns = P('horn'); chain(horns, [[cx - 3, G - 29 + y0, 1.5], [cx - 5, G - 33 + y0, 1], [cx - 4, G - 36 + y0, 0.5]]); chain(horns, [[cx + 3, G - 29 + y0, 1.5], [cx + 5, G - 33 + y0, 1], [cx + 4, G - 36 + y0, 0.5]]);
+      px(horns, cx - 11, G - 12 + y0 - sway * 4); px(horns, cx + 11, G - 12 + y0);
+      eyes = [{x: cx - 3, y: G - 27 + y0, w: 2, h: 2}, {x: cx + 2, y: G - 27 + y0, w: 2, h: 2}];
+      mouth = {x: cx - 1, y: G - 23 + y0, w: 3, fangs: true};
+      a = {head: [cx, G - 31 + y0], side: [cx - 15, G - 13], hold: [cx - 11, G - 12 + y0 - sway * 4], rear: [cx + 20, G - 12], cube: [cx + 26, G - 12], box: [cx - 24, G - 36, cx + 24, G]};
+      break;
+    }
+    case 8: { // SERVICE: wyvern with a raised wing and long neck
+      const y0 = -bob, fl = flap;
+      const wingF = P('far'); poly(wingF, [[cx + 2, G - 16 + y0], [cx + 2, G - 34 - fl * 3 + y0], [cx - 2, G - 28 + y0], [cx - 7, G - 31 - fl * 2 + y0], [cx - 6, G - 23 + y0], [cx - 4, G - 16 + y0]]);
+      const tail = P('limb'); chain(tail, [[cx - 14, G - 11 + y0, 3], [cx - 22, G - 7, 2], [cx - 27, G - 11 - sway, 1.2]]);
+      const tip = P('horn'); poly(tip, [[cx - 28, G - 9 - sway], [cx - 31, G - 13 - sway], [cx - 27, G - 15 - sway], [cx - 25, G - 12 - sway]]);
+      const far = P('far'); limb(far, cx + 5, G - 8 + y0, cx + 4 - walk * 2, G - 1, 2); limb(far, cx - 8, G - 8 + y0, cx - 7 + walk * 2, G - 1, 2);
+      const b = P('body'); ellipse(b, cx - 3, G - 11 + y0, 14, 7);
+      const bel = P('belly'); ellipse(bel, cx - 2, G - 7.5 + y0, 10, 2.6);
+      const spikes = P('horn'); for (let x = cx - 14; x <= cx + 6; x += 4) poly(spikes, [[x - 1.5, G - 16 + y0 + (x < cx - 10 ? 1 : 0)], [x, G - 20 + y0], [x + 1.5, G - 16 + y0]]);
+      const wing = P('membrane'); poly(wing, [[cx - 2, G - 16 + y0], [cx - 8, G - 37 - fl * 3 + y0], [cx - 13, G - 29 + y0], [cx - 20, G - 34 - fl * 2 + y0], [cx - 20, G - 25 + y0], [cx - 26, G - 25 - fl + y0], [cx - 14, G - 16 + y0]]);
+      const bones = P('limb'); limb(bones, cx - 2, G - 16 + y0, cx - 8, G - 37 - fl * 3 + y0, 1, 0.5); limb(bones, cx - 8, G - 37 - fl * 3 + y0, cx - 20, G - 34 - fl * 2 + y0, 0.6, 0.5); limb(bones, cx - 8, G - 37 - fl * 3 + y0, cx - 26, G - 25 - fl + y0, 0.6, 0.4);
+      const legs = P('limb'); limb(legs, cx + 8, G - 8 + y0, cx + 9 + walk * 2, G - 1, 2.2); limb(legs, cx - 11, G - 8 + y0, cx - 12 - walk * 2, G - 1, 2.2);
+      const neck = P('body'); chain(neck, [[cx + 8, G - 14 + y0, 3.6], [cx + 13, G - 21 + y0, 2.8], [cx + 16, G - 26 + y0, 2.6]]);
+      const horns = P('horn'); chain(horns, [[cx + 16, G - 31 + y0, 1.2], [cx + 13, G - 35 + y0, 0.6]]); chain(horns, [[cx + 19, G - 31 + y0, 1.1], [cx + 18, G - 36 + y0, 0.5]]);
+      const head = P('body'); ellipse(head, cx + 18, G - 28.5 + y0, 5.5, 4); ellipse(head, cx + 23, G - 27.5 + y0, 3.8, 2.4);
+      eyes = [{x: cx + 18, y: G - 30 + y0, w: 2, h: 2}];
+      mouth = {x: cx + 23, y: G - 26 + y0, w: 3, fangs: true};
+      a = {head: [cx + 17, G - 33 + y0], side: [cx - 4, G - 12 + y0], hold: [cx + 27, G - 26 + y0], rear: [cx - 28, G - 12], cube: [cx + 24, G - 17], box: [cx - 31, G - 38, cx + 27, G]};
+      break;
+    }
+    case 9: { // KERNEL: seated great dragon, wings spread
+      const y0 = -bob, fl = flap;
+      const wing = P('membrane');
+      for (const s of [-1, 1]) {
+        const sx = cx + s * 7;
+        poly(wing, [[sx, G - 22 + y0], [cx + s * 20, G - 36 - fl * 2], [cx + s * 29, G - 30 - fl], [cx + s * 27, G - 21], [cx + s * 23, G - 24], [cx + s * 21, G - 16], [cx + s * 17, G - 20], [cx + s * 14, G - 13], [sx + s * 2, G - 15 + y0]]);
+      }
+      const bones = P('limb');
+      for (const s of [-1, 1]) { const sx = cx + s * 7; limb(bones, sx, G - 22 + y0, cx + s * 20, G - 36 - fl * 2, 1.1, 0.6); limb(bones, cx + s * 20, G - 36 - fl * 2, cx + s * 29, G - 30 - fl, 0.7, 0.5); limb(bones, cx + s * 20, G - 36 - fl * 2, cx + s * 23, G - 24, 0.5); limb(bones, cx + s * 20, G - 36 - fl * 2, cx + s * 17, G - 20, 0.5); }
+      const haunch = P('limb'); ellipse(haunch, cx - 8, G - 5, 6, 5); ellipse(haunch, cx + 8, G - 5, 6, 5);
+      const b = P('body'); ellipse(b, cx, G - 13 + y0, 10, 11);
+      const bel = P('belly'); ellipse(bel, cx, G - 11 + y0, 6, 8);
+      const arms = P('limb'); limb(arms, cx - 8, G - 17 + y0, cx - 6, G - 3, 2.2, 1.8); limb(arms, cx + 8, G - 17 + y0, cx + 6, G - 3, 2.2, 1.8);
+      const tail = P('limb'); chain(tail, [[cx + 10, G - 3, 2.6], [cx, G - 0.5, 2.2], [cx - 12, G - 1, 1.6], [cx - 17, G - 5 - sway, 1]]);
+      const claws = P('horn'); [-7, -5, 5, 7].forEach(o => px(claws, cx + o, G - 1));
+      const neck = P('body'); limb(neck, cx, G - 22 + y0, cx, G - 26 + y0, 4.2, 3.8);
+      const horns = P('horn'); for (const s of [-1, 1]) chain(horns, [[cx + s * 4, G - 31 + y0, 1.8], [cx + s * 8, G - 35 + y0, 1.1], [cx + s * 10, G - 37 + y0, 0.5]]);
+      const head = P('body'); ellipse(head, cx, G - 29 + y0, 6.5, 5); ellipse(head, cx, G - 25.5 + y0, 4.2, 2.8);
+      eyes = [{x: cx - 4, y: G - 31 + y0, w: 2, h: 2}, {x: cx + 3, y: G - 31 + y0, w: 2, h: 2}];
+      mouth = {x: cx - 1, y: G - 24 + y0, w: 3, fangs: true};
+      a = {head: [cx, G - 34 + y0], side: [cx - 16, G - 9], hold: [cx - 7, G - 4], rear: [cx - 18, G - 6], cube: [cx + 25, G - 10], box: [cx - 29, G - 37, cx + 29, G], plates: true};
+      break;
+    }
+    case 10: { // SINGULARITY: ascended, floating geometric form
+      const fy = Math.round(Math.sin(mo.phase * 0.7) * 1.4), y = G - 18 + fy;
+      const wing = P('membrane');
+      for (const s of [-1, 1]) for (let i = 0; i < 4; i++) {
+        const ang = (-0.35 - i * 0.28) * s, len = 14 + i * 2 + flap;
+        limb(wing, cx + s * 6, y - 4, cx + s * 6 + Math.sin(ang) * len * s * s, y - 4 - Math.cos(ang) * len * 0.75, 1.2, 0.5);
+      }
+      const halo = P('horn'); ring(halo, cx, y - 19, 9, 2.4, 1);
+      const plates = P('limb');
+      for (const s of [-1, 1]) {
+        poly(plates, [[cx + s * 10, y - 9], [cx + s * 15, y - 7], [cx + s * 12, y - 3]]);
+        const hy = y + 4 - fy * 2;
+        poly(plates, [[cx + s * 17, hy - 2.5], [cx + s * 19.5, hy], [cx + s * 17, hy + 2.5], [cx + s * 14.5, hy]]);
+      }
+      const b = P('body'); poly(b, [[cx, y - 13], [cx + 9.5, y], [cx, y + 13], [cx - 9.5, y]]);
+      const facet = P('belly'); poly(facet, [[cx, y - 7], [cx + 5, y], [cx, y + 7], [cx - 5, y]]);
+      const core = P('core'); ellipse(core, cx, y, mo.alt ? 2.4 : 1.8, mo.alt ? 2.4 : 1.8);
+      const head = P('body'); poly(head, [[cx - 3.5, y - 16], [cx, y - 19.5], [cx + 3.5, y - 16], [cx + 3.5, y - 14.5], [cx, y - 13], [cx - 3.5, y - 14.5]]);
+      eyes = [{x: cx - 2, y: y - 16, w: 5, h: 1, visor: true}];
+      mouth = null;
+      a = {head: [cx, y - 22], side: [cx - 20, y + 4], hold: [cx - 17, y + 4], rear: [cx, y + 15], cube: [cx + 22, 6], box: [cx - 22, y - 24, cx + 22, y + 14], float: true};
+      break;
+    }
+  }
+  return {parts, eyes, mouth, a};
 }
 
 // Returns Map(index -> color) for frame f. opts: {screen, reduced}
@@ -272,177 +496,209 @@ function build(D, f, opts) {
   opts = opts || {};
   const screen = opts.screen || '#080A0E', motion = !opts.reduced;
   const buf = new Map();
-  const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) buf.set(y * GW + x, c); };
-  const st = D.stage, aff = D.affinity, has = D.count > 0, mut = D.mutations || {};
+  const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) buf.set(K(x, y), c); };
+  const sprite = (rows, x0, y0, colors) => rows.forEach((row, j) => { for (let i = 0; i < row.length; i++) { const c = colors[row[i]]; if (c) put(x0 + i, y0 + j, c); } });
+  const st = Math.min(D.stage, MAX_STAGE), aff = D.affinity, has = D.count > 0, mut = D.mutations || {};
   const sleeping = has && st > 0 && D.energy < 20;
   let body = PET[aff || 'none'];
   if (mut.shiny) body = mix(body, C.gold, 0.35);
   if (D.sick) body = mix(body, C.sick, D.critical ? 0.6 : 0.4);
-  const shade = mix(body, screen, 0.42), deep = mix(body, screen, 0.8), hi = mix(body, '#ffffff', 0.6), eye = screen;
-  const pal = {body, shade, hi};
+  const eye = screen;
 
   if (st === 0) {
-    const w = (f % 48) - 43;
-    const wob = motion && has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
-    const cx = 20 + wob, cy = FLOOR - 7 + 0.5;
-    for (let x = 16; x <= 24; x++) put(x, FLOOR + 1, deep);
-    shadeBlob(blob(cx, cy, 5.5, 7, 0.28), cx, cy, pal, put, (x, y) => ((x * 7 + y * 13) % 11 === 0 ? shade : null));
-    const p = clamp(D.xp / 60, 0, 1);
+    const w = (f % 48) - 43, wob = motion && has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+    const cx = 32 + wob, cy = G - 10 + 0.5;
+    for (let x = 24; x <= 40; x++) put(x, G + 1, mix(body, screen, 0.8));
+    const m = new Set();
+    for (let y = Math.floor(cy - 10); y <= Math.ceil(cy + 10); y++) for (let x = cx - 9; x <= cx + 9; x++) {
+      const dy = (y - cy) / 10, rx = 8 * (dy < 0 ? 1 - 0.25 * dy * dy : 1), dx = (x - cx) / rx;
+      if (dx * dx + dy * dy <= 1) px(m, x, y);
+    }
+    paint(put, m, body, screen, (x, y) => ((x * 7 + y * 13) % 11 === 0 ? mix(body, screen, 0.42) : null));
+    const p = clamp(D.xp / STAGES[1].xp, 0, 1);
     if (has && p > 0) {
-      const path = [[-4, 0], [-3, 1], [-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0], [3, 1], [4, 0]];
+      const path = [[-7, 0], [-6, 1], [-5, 0], [-4, 1], [-3, 2], [-2, 1], [-1, 0], [0, 1], [1, 2], [2, 1], [3, 0], [4, 1], [5, 0], [6, 1], [7, 0]];
       const n = Math.ceil(p * path.length);
-      for (let i = 0; i < n; i++) put(cx + path[i][0], Math.round(cy) - 1 + path[i][1], eye);
+      for (let i = 0; i < n; i++) put(cx + path[i][0], Math.round(cy) - 2 + path[i][1], eye);
     }
     return buf;
   }
 
-  const G = GEOM[st], feet = st >= 2, form = st >= 3 ? D.form : null;
-  const cx = (aff === 'unity' && feet) ? 17 : 20;
-  const bob = motion && !sleeping && !D.critical ? ((f >> 2) & 1) : 0;
-  const baseCy = FLOOR - (feet ? 1 : 0) - G.ry + 0.5, cy = baseCy - bob;
-  const halfAt = y => G.rx * Math.sqrt(Math.max(0, 1 - ((y - cy) / G.ry) ** 2));
+  const mo = {
+    bob: motion && !sleeping && !D.critical ? ((f >> 2) & 1) : 0,
+    walk: motion && !sleeping ? ((f >> 2) & 1) : 0,
+    flap: motion && !sleeping ? ((f >> 2) & 1) : 0,
+    sway: motion && !sleeping ? ((f >> 3) & 1) : 0,
+    alt: motion ? ((f >> 1) & 1) : 0,
+    phase: motion ? f * 0.4 : 0,
+  };
+  const form = st >= FORM_STAGE ? D.form : null;
+  const pl = plans(st, f, mo), A = pl.a;
+  const pal = {
+    body, limb: mix(body, screen, 0.16), far: mix(body, screen, 0.42), belly: mix(body, '#ffffff', 0.38),
+    membrane: mix(body, screen, 0.5), horn: mix(C.horn, body, 0.18), core: '#FFFFFF', eyeWhite: C.eyeWhite,
+  };
 
-  // things behind the body
-  if (form === 'owl') sprite(put, MOON, 2, 4, {'#': C.moon});
-  if (form === 'shipper') {
-    const x0 = Math.max(0, Math.round(cx - G.rx - 9)), y0 = FLOOR - 4;
-    sprite(put, CRATE, x0, y0, {b: C.wood, h: C.woodDark});
-    for (let y = y0 - 4; y < y0; y++) put(x0 + 5, y, C.steel);
-    const wave = motion ? ((f >> 3) & 1) : 0;
-    put(x0 + 6, y0 - 4 + wave, body); put(x0 + 7, y0 - 4 + wave, body); put(x0 + 6, y0 - 3 + wave, body);
+  // backdrop accessories
+  if (form === 'owl') sprite(['.###.', '##...', '#....', '#....', '##...', '.###.'], 3, 6, {'#': C.moon});
+  if (form === 'shipper' && !A.float) {
+    const x0 = Math.max(0, Math.round(A.box[0] - 10)), y0 = G - 5;
+    sprite(['bbbbbbb', 'bhbbbhb', 'bbhbhbb', 'bbbhbbb', 'bbhbhbb', 'bhbbbhb'], x0, y0, {b: C.wood, h: C.woodDark});
+    for (let y = y0 - 6; y < y0; y++) put(x0 + 6, y, C.steel);
+    const wv = mo.alt;
+    sprite(['ff.', 'fff', 'ff.'].map(r => r), x0 + 7, y0 - 6 + wv, {f: body});
   }
   if (form === 'streaker') {
-    const L = Math.ceil(cx - halfAt(Math.round(cy)));
-    sprite(put, FLAME[motion ? ((f >> 1) & 1) : 0], L - 5, Math.round(cy) - 2, {r: C.red, o: C.orange, y: C.yellow});
-    const k = motion ? ((f >> 1) % 3) : 1;
-    for (let i = 0; i < 2 + k; i++) { put(L - 3 - i, Math.round(cy) + 3, shade); }
+    const [rx, ry] = A.rear, fr = mo.alt;
+    const flame = fr ? ['..y..', '.yoy.', 'oyyyo', 'oryro', '.rrr.'] : ['.y...', '.yo..', 'oyyo.', 'oryro', '.rrr.'];
+    sprite(flame, rx - 6, ry - 3, {r: C.red, o: C.orange, y: C.yellow});
+    for (let i = 0; i < 3 + mo.walk; i++) { put(rx - 8 - i, ry + 3, mix(body, screen, 0.4)); put(rx - 7 - i, ry - 3, mix(body, screen, 0.55)); }
   }
 
-  const sw = Math.round(G.rx * 0.85);
-  for (let x = cx - sw; x <= cx + sw; x++) put(x, FLOOR + 1, deep);
-  if (feet) {
-    const fx = Math.max(2, Math.round(G.rx * 0.45));
-    for (const s of [-1, 1]) { const lx = cx + s * fx; put(lx, FLOOR - 1, shade); put(lx, FLOOR, shade); put(lx + s, FLOOR, shade); }
-  }
+  // shadow
+  if (!A.float) { const [x0, , x1] = A.box; for (let x = Math.round(x0 + (x1 - x0) * 0.2); x <= Math.round(x1 - (x1 - x0) * 0.2); x++) put(x, G + 1, mix(body, screen, 0.82)); }
+  else { const cy = A.rear[1] + 3; for (let i = 0; i < 4; i++) if (((f >> 1) + i) % 4 !== 0) put(32 + (i - 1.5) * 3, Math.min(GH - 4, cy + ((f + i * 3) % 6)), mix(body, screen, 0.5)); }
 
-  const top = Math.ceil(cy - G.ry);
+  // body parts
   const stripes = form === 'polyglot' && D.srcs30 && D.srcs30.length > 1
-    ? (x, y) => mix(PET[D.srcs30[Math.floor((y - top) / 2) % D.srcs30.length]] || body, body, 0.35) : null;
-  const sheen = aff === 'unreal' && feet ? (x, y) => ((((x - y + (motion ? f : 0)) % 13) + 13) % 13 < 2 ? mix(body, '#ffffff', 0.38) : null) : null;
-  const S = shadeBlob(blob(cx, cy, G.rx, G.ry, 0), cx, cy, pal, put, (x, y) => (sheen && sheen(x, y)) || (stripes && stripes(x, y)) || null);
-  let T = colTop(S, cx);
-
-  if (st >= 3) {
-    const ay = Math.round(cy + G.ry * 0.15), h = halfAt(ay), L = Math.ceil(cx - h), R = Math.floor(cx + h);
-    const wave = motion && !sleeping && form !== 'debugger' && form !== 'guardian' ? ((f >> 3) & 1) : 0;
-    put(L - 1, ay, body); put(L - 2, ay + 1 - wave * 2, body); put(R + 1, ay, body); put(R + 2, ay + 1, body);
-    if (form === 'guardian') sprite(put, SHIELD, L - 7, ay - 2, {s: C.steel, w: C.steelDark, '+': C.white});
-    if (form === 'debugger') {
-      const hx = L - 3, hy = ay;
-      [[0, 0], [-1, -1], [-2, -2]].forEach(([dx, dy]) => put(hx + dx, hy + dy, C.steel));
-      [[-3, -3], [-4, -3], [-3, -4], [-5, -4], [-4, -5], [-5, -2], [-2, -5]].forEach(([dx, dy]) => put(hx + dx, hy + dy, C.steel));
-      put(hx - 4, hy - 4, C.steelDark);
-    }
+    ? (x, y) => mix(PET[D.srcs30[Math.floor(y / 3) % D.srcs30.length]] || body, body, 0.35) : null;
+  const sheen = aff === 'unreal' && st >= CREST_STAGE ? (x, y) => ((((x - y + (motion ? f * 2 : 0)) % 17) + 17) % 17 < 2 ? mix(body, '#ffffff', 0.4) : null) : null;
+  for (const part of pl.parts) {
+    const base = pal[part.role] || body;
+    const extra = part.role === 'body' ? (x, y) => (sheen && sheen(x, y)) || (stripes && stripes(x, y)) || null : null;
+    paint(put, part.m, base, screen, extra, part.role === 'core');
   }
-  if (form === 'owl') {
-    const ox = Math.round(G.rx * 0.5);
-    for (const s of [-1, 1]) { const bx = cx + s * ox, b = colTop(S, bx); put(bx, b - 1, shade); put(bx + s, b - 2, shade); }
-  }
-  if (st >= 4) {
-    const hx = Math.round(G.rx * 0.45);
-    if (form !== 'owl') for (const s of [-1, 1]) { const bx = cx + s * hx, b = colTop(S, bx); put(bx, b - 1, hi); put(bx + s, b - 2, hi); put(bx + s, b - 3, hi); }
-    const ty = Math.round(cy + G.ry * 0.45), tx = Math.floor(cx + halfAt(ty)), tw = motion && !sleeping ? ((f >> 3) & 1) : 0;
-    put(tx + 1, ty, shade); put(tx + 2, ty - 1, shade); put(tx + 3, ty - 2, shade); put(tx + 3, ty - 3 - tw, shade);
-    const ax = tx + 3, ay2 = ty - 4 - tw;
-    put(ax, ay2, hi); put(ax - 1, ay2, hi); put(ax + 1, ay2, hi); put(ax, ay2 - 1, hi);
-  }
+  if (A.plates) { const [hx] = A.head; for (let y = G - 18; y <= G - 5; y += 3) for (let x = hx - 4; x <= hx + 4; x++) if (buf.get(K(x, y)) === pal.belly) put(x, y, mix(pal.belly, screen, 0.3)); }
 
   // face
-  const ex = Math.max(2, Math.round(G.rx * 0.4)), ey = Math.round(cy - G.ry * 0.2), ew = feet ? 2 : 1;
   const blink = motion && ((f % 41) < 1 || (f % 113) === 60);
   const happy = D.mood >= 70 && !sleeping && !D.sick, tired = has && D.rest < 50;
-  for (const s of [-1, 1]) {
-    const x0 = s < 0 ? cx - ex - (ew - 1) : cx + ex;
-    const ec = mut.cursed && s > 0 ? C.curse : eye;
-    if (sleeping || (blink && form !== 'owl')) { for (let i = 0; i < ew; i++) put(x0 + i, ey + 1, ec); }
-    else if (D.critical) { for (let i = 0; i < ew; i++) put(x0 + i, ey + 1, ec); put(x0 + (s < 0 ? 0 : ew - 1), ey + 2, C.drop); }
+  pl.eyes.forEach((e, i) => {
+    const ec = mut.cursed && i === pl.eyes.length - 1 ? C.curse : eye;
+    if (e.visor) {
+      const vc = D.sick ? C.alarm : mut.cursed ? C.curse : '#FFFFFF';
+      for (let k = 0; k < e.w; k++) put(e.x + k, e.y, (sleeping || blink) && k % 2 ? eye : vc);
+      return;
+    }
+    if (sleeping || (blink && form !== 'owl')) { for (let k = 0; k < e.w; k++) put(e.x + k, e.y + e.h - 1, ec); }
+    else if (D.critical) { for (let k = 0; k < e.w; k++) put(e.x + k, e.y + e.h - 1, ec); put(e.x, e.y + e.h, C.drop); }
     else {
-      for (let i = 0; i < ew; i++) { put(x0 + i, ey, ec); put(x0 + i, ey + 1, ec); }
-      if (form === 'owl' && ew === 2) put(x0 + (s < 0 ? 1 : 0), ey + 1, C.yellow);
-      else if (happy && ew === 2) put(x0, ey, hi);
+      for (let k = 0; k < e.w; k++) for (let j = 0; j < e.h; j++) put(e.x + k, e.y + j, ec);
+      if (form === 'owl') put(e.x + e.w - 1, e.y + e.h - 1, C.yellow);
+      else if (happy && e.w >= 2) put(e.x, e.y, mix(body, '#ffffff', 0.7));
     }
-    if (tired && !D.critical) for (let i = 0; i < ew; i++) put(x0 + i, ey + 2, shade);
+    if (tired && !D.critical) for (let k = 0; k < e.w; k++) put(e.x + k, e.y + e.h, mix(body, screen, 0.45));
+  });
+  const M = pl.mouth;
+  if (M) {
+    if (aff === 'local' && st >= CREST_STAGE && !D.sick) {
+      put(M.x - 1, M.y - 1, eye); put(M.x, M.y, eye); put(M.x - 1, M.y + 1, eye);
+      if (!motion || mo.alt) { put(M.x + 1, M.y + 1, eye); put(M.x + 2, M.y + 1, eye); }
+    } else if (sleeping) put(M.x + 1, M.y, eye);
+    else if (D.sick || D.mood < 30) { put(M.x, M.y + 1, eye); put(M.x + 1, M.y, eye); put(M.x + 2, M.y + 1, eye); }
+    else if (happy) { put(M.x, M.y, eye); put(M.x + 1, M.y + 1, eye); put(M.x + 2, M.y, eye); }
+    else for (let k = 0; k < M.w; k++) put(M.x + k, M.y, eye);
+    if (M.fangs && !sleeping) { put(M.x, M.y + 1, pal.horn); put(M.x + M.w - 1, M.y + 1, pal.horn); }
+    if (M.tongue && !sleeping) { put(M.x + M.w, M.y, C.tongue); put(M.x + M.w + 1, M.y - 1, C.tongue); put(M.x + M.w + 1, M.y + 1, C.tongue); }
   }
-  const my = ey + (feet ? 3 : 2);
-  if (aff === 'local' && feet && !D.sick) {
-    const bx = cx - 2;
-    put(bx, my - 1, eye); put(bx + 1, my, eye); put(bx, my + 1, eye);
-    if (!motion || ((f >> 2) & 1)) { put(bx + 2, my + 1, eye); put(bx + 3, my + 1, eye); }
-  } else if (sleeping) put(cx, my, eye);
-  else if (D.sick || D.mood < 30) { put(cx - 1, my + 1, eye); put(cx, my, eye); put(cx + 1, my + 1, eye); }
-  else if (happy) { put(cx - 1, my, eye); put(cx, my + 1, eye); put(cx + 1, my, eye); }
-  else { put(cx, my, eye); put(cx + 1, my, eye); }
 
-  // head gear
-  if (mut.crowned && feet) { sprite(put, CROWN, cx - 2, T - 3, {y: C.gold, g: C.gem}); T -= 3; }
-  if (feet) {
+  // held / worn accessories from forms
+  if (form === 'guardian') { const [sx, sy] = A.side; sprite(['sssssss', 'swww+ws', 'sw+++ws', 'sww+wws', '.sw+ws.', '..sws..', '...s...'], sx - 3, sy - 3, {s: C.steel, w: C.steelDark, '+': C.white}); }
+  if (form === 'debugger') {
+    const [hx, hy] = A.hold;
+    [[0, 0], [-1, -1], [-2, -2], [-3, -3]].forEach(([dx, dy]) => put(hx + dx, hy + dy, C.steel));
+    [[-4, -4], [-5, -4], [-4, -5], [-6, -5], [-5, -6], [-6, -3], [-3, -6], [-7, -6], [-6, -7]].forEach(([dx, dy]) => put(hx + dx, hy + dy, C.steel));
+    put(hx - 5, hy - 5, C.steelDark);
+  }
+  if (form === 'owl') { const [hx, hy] = A.head; put(hx - 4, hy + 1, pal.body); put(hx - 5, hy, pal.body); put(hx - 5, hy - 1, pal.limb); put(hx + 4, hy + 1, pal.body); put(hx + 5, hy, pal.body); put(hx + 5, hy - 1, pal.limb); }
+  if (form === 'vibe') {
+    const [hx, hy] = A.head, w = st >= 9 ? 8 : 6, band = mix('#2A2F3A', body, 0.15);
+    for (let x = hx - w + 1; x <= hx + w - 1; x++) { const t = (x - hx) / w; put(x, Math.round(hy + 2 - (1 - t * t) * 3), band); }
+    for (const s of [-1, 1]) for (let j = 0; j < 4; j++) { put(hx + s * w, hy + 2 + j, band); put(hx + s * (w + 1), hy + 2 + j, mix(C.gem, band, 0.3)); }
+    const nt = (f >> 1) % 8, nx = hx + w + 3 + (nt >> 2), ny = hy - 1 - nt;
+    sprite(['.##', '.#.', '##.'], nx, ny, {'#': C.note});
+    if (nt > 3) sprite(['#', '#', '#'], hx - w - 4, hy + 4 - nt, {'#': mix(C.note, body, 0.4)});
+  }
+
+  // crest from the dominant source
+  let [tx, ty] = A.head;
+  if (mut.crowned && st >= CREST_STAGE) { sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], tx - 3, ty - 2, {y: C.gold, g: C.gem}); ty -= 3; }
+  if (st >= CREST_STAGE) {
+    const hi = mix(body, '#ffffff', 0.6), sh = mix(body, screen, 0.42), deep = mix(body, screen, 0.75);
     if (aff === 'github') {
-      for (let i = 1; i <= 5; i++) put(cx, T - i, shade);
-      put(cx + 1, T - 3, shade); put(cx + 2, T - 4, shade); put(cx + 2, T - 5, shade);
+      const L = clamp(ty - 4, 3, 6);  // shorter antenna when the head is near the top edge
+      for (let i = 1; i <= L; i++) put(tx, ty - i, sh);
+      for (let i = 2; i < L; i++) put(tx + Math.min(3, i - 1), ty - i - 1, sh);
       const p = motion ? ((f >> 3) & 1) : 0;
-      put(cx, T - 6, p ? hi : body); put(cx + 2, T - 6, p ? body : hi);
+      sprite(['nn', 'nn'], tx - 0.5, ty - L - 2, {n: p ? hi : body}); sprite(['nn', 'nn'], tx + 2.5, ty - L - 2, {n: p ? body : hi});
     } else if (aff === 'gitlab') {
-      put(cx, T - 1, shade); put(cx, T - 2, shade);
-      for (let x = cx - 4; x <= cx + 4; x++) put(x, T - 3, deep);
+      put(tx, ty - 1, sh); put(tx, ty - 2, sh);
+      for (let x = tx - 6; x <= tx + 6; x++) put(x, ty - 3, deep);
       const j = D.sick ? -1 : (motion ? ((f >> 2) % 4) : 3);
-      [-4, 0, 4].forEach((o, k) => { const c = D.sick && k === 2 ? C.alarm : k < j ? body : k === j ? hi : shade; put(cx + o, T - 3, c); put(cx + o, T - 4, c); });
+      [-6, 0, 6].forEach((o, k) => { const c = D.sick && k === 2 ? C.alarm : k < j ? body : k === j ? hi : sh; sprite(['cc', 'cc'], tx + o - 0.5, ty - 4.5, {c}); });
     } else if (aff === 'local') {
-      put(cx, T - 1, shade); put(cx, T - 2, (!motion || ((f >> 2) & 1)) ? hi : shade);
+      put(tx, ty - 1, sh); put(tx, ty - 2, sh); put(tx, ty - 3, (!motion || mo.alt) ? hi : sh);
     } else if (aff === 'unity') {
-      const cb = motion ? ((f >> 2) & 1) : 0;
-      const x0 = Math.min(GW - 8, cx + Math.round(G.rx) + 5), y0 = Math.round(baseCy - G.ry - 3 + cb);
-      sprite(put, CUBE, x0, y0, {h: hi, b: body, s: shade});
+      const [ux, uy] = A.cube, cb = motion ? ((f >> 2) & 1) : 0;
+      sprite(['...hhh...', '.hhhhhhh.', 'hhhhhhhhh', 'bbhhhhhss', 'bbbbhssss', 'bbbbbssss', 'bbbbbssss', '.bbbbsss.', '...bbs...'], ux - 4, uy + cb, {h: hi, b: body, s: sh});
     } else if (aff === 'unreal') {
-      const sp = [[cx - G.rx - 2, cy - G.ry + 1], [cx + G.rx + 2, cy - 2], [cx + 2, T - 3], [cx - G.rx - 1, cy + 2]];
+      const [x0, y0, x1, y1] = A.box;
+      const sp = [[x0 - 1, y0 + 3], [x1 + 1, y0 + 8], [tx + 3, ty - 3], [x0 + 1, y1 - 6], [x1 - 2, y1 - 3]];
       const [sx, sy] = sp[motion ? ((f >> 2) % sp.length) : 0];
-      put(sx, sy, hi); put(sx - 1, sy, shade); put(sx + 1, sy, shade); put(sx, sy - 1, shade); put(sx, sy + 1, shade);
+      put(sx, sy, hi); put(sx - 1, sy, sh); put(sx + 1, sy, sh); put(sx, sy - 1, sh); put(sx, sy + 1, sh);
     }
   }
-  if (st === 5) {
-    const hy = Math.max(0, T - 8);
-    for (let x = cx - 5; x <= cx + 5; x++) if (((x + (motion ? (f >> 1) : 0)) & 1) === 0) put(x, hy, hi);
-    for (let k = 0; k < 3; k++) {
-      const a = (motion ? f * 0.11 : 0.6) + k * 2.094;
-      const ox = Math.round(cx + (G.rx + 3.5) * Math.cos(a)), oy = Math.round(cy + 2.5 * Math.sin(a));
-      if (Math.sin(a) < 0 && S.has(oy * GW + ox)) continue;
-      put(ox, oy, hi);
+
+  // final-stage extras
+  if (st >= 9) {
+    const [x0, y0, x1] = A.box, cx = (x0 + x1) / 2, cy = (y0 + G) / 2;
+    for (let k = 0; k < 4; k++) {
+      const ang = (motion ? f * 0.11 : 0.6) + k * Math.PI / 2;
+      const ox = Math.round(cx + ((x1 - x0) / 2 + 2) * Math.cos(ang)), oy = Math.round(cy + 4 * Math.sin(ang));
+      if (Math.sin(ang) < 0 && buf.has(K(ox, oy))) continue;
+      put(ox, oy, st === 10 ? '#FFFFFF' : mix(body, '#ffffff', 0.6));
     }
   }
   if (mut.shiny && motion) {
-    const sp = [[cx - G.rx - 1, top + 1], [cx + G.rx + 1, top + 3], [cx - 3, top - 2], [cx + G.rx - 1, FLOOR - 1]];
+    const [x0, y0, x1, y1] = A.box;
+    const sp = [[x0 + 2, y0 + 2], [x1 - 1, y0 + 6], [(x0 + x1) / 2, y0 - 1], [x1 - 3, y1 - 4], [x0 + 3, y1 - 8]];
     const [sx, sy] = sp[(f >> 1) % sp.length];
-    put(sx, sy, C.spark);
+    put(sx, sy, C.spark); put(sx - 1, sy, mix(C.spark, screen, 0.5)); put(sx + 1, sy, mix(C.spark, screen, 0.5)); put(sx, sy - 1, mix(C.spark, screen, 0.5)); put(sx, sy + 1, mix(C.spark, screen, 0.5));
   }
   // sick: sweat drop, alarm mark, coughs when critical
   if (D.sick) {
-    const R = Math.floor(cx + halfAt(top + 2));
-    if (!motion || ((f >> 2) & 1)) { put(R - 1, top + 1, C.drop); put(R - 1, top + 2, C.drop); }
-    const mx = Math.min(GW - 2, Math.floor(cx + G.rx) + 2), my2 = Math.max(1, top - 2);
-    if (!motion || ((f >> 1) & 1)) { put(mx, my2, C.alarm); put(mx, my2 + 1, C.alarm); put(mx, my2 + 3, C.alarm); }
-    if (D.critical && motion && (f % 8) < 3) { const k = f % 8, px = cx - 3 - k * 2, py = my - k; put(px, py, C.steel); put(px - 1, py, C.steel); put(px, py - 1, C.steel); }
+    const [hx, hy] = A.head;
+    if (!motion || mo.walk) { put(hx + 6, hy + 3, C.drop); put(hx + 6, hy + 4, C.drop); put(hx + 5, hy + 5, C.drop); }
+    const mx = Math.min(GW - 2, Math.round(A.box[2]) + 2), my = Math.max(2, Math.round(A.box[1]));
+    if (!motion || mo.alt) { for (let j = 0; j < 4; j++) put(mx, my + j, C.alarm); put(mx, my + 5, C.alarm); }
+    if (D.critical && motion && M && (f % 8) < 3) { const k = f % 8, cx2 = M.x + M.w + 2 + k * 2, cy2 = M.y - k; put(cx2, cy2, C.steel); put(cx2 + 1, cy2, C.steel); put(cx2, cy2 - 1, C.steel); }
   }
   if (sleeping) {
-    const k = motion ? ((f >> 3) % 3) : 1, zx = cx + Math.round(G.rx * 0.6) + k, zy = T - 5 - k * 2;
-    sprite(put, ZG, zx, zy, {'#': k === 2 ? shade : hi});
+    const [hx, hy] = A.head, k = motion ? ((f >> 3) % 3) : 1;
+    sprite(['####', '..#.', '.#..', '####'], hx + 6 + k * 2, hy - 4 - k * 3, {'#': k === 2 ? mix(body, screen, 0.4) : mix(body, '#ffffff', 0.6)});
   }
   return buf;
+}
+// draw one shaded part: top edge lit, bottom and right edges shaded
+function paint(put, m, color, screen, extra, glow) {
+  const sh = mix(color, screen, 0.45), hi = mix(color, '#ffffff', 0.45);
+  for (const k of m) {
+    const x = k % GW, y = (k / GW) | 0;
+    let c = color;
+    if (glow) c = color;
+    else if (!m.has(k + GW)) c = sh;
+    else if (!m.has(k - GW)) c = hi;
+    else if (!m.has(k + 1)) c = sh;
+    else { const e = extra && extra(x, y); if (e) c = e; }
+    put(x, y, c);
+  }
 }
 
 /* ---------- animated SVG card (for a README) ---------- */
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 function renderSVG(D, o) {
   o = o || {};
-  const screen = '#080A0E', dot = '#141820', cell = 8, frames = 16, loop = 2;
+  const screen = '#080A0E', dot = '#141820', cell = 5, frames = 16, loop = 2;
   const ink = '#E3E7ED', muted = '#8C95A4', track = '#20262F', panel = '#151920', line = '#272D37';
   const good = '#49C383', warn = '#E3AE3C', bad = '#EF6B60';
   const aff = D.affinity, accent = PET[aff || 'none'];
@@ -450,8 +706,8 @@ function renderSVG(D, o) {
   for (let f = 0; f < frames; f++) {
     const byColor = new Map();
     for (const [k, c] of build(D, f, {screen})) {
-      const x = (k % GW) * cell + 1, y = ((k / GW) | 0) * cell + 1;
-      byColor.set(c, (byColor.get(c) || '') + `M${x} ${y}h6v6h-6z`);
+      const x = (k % GW) * cell, y = ((k / GW) | 0) * cell;
+      byColor.set(c, (byColor.get(c) || '') + `M${x} ${y}h4v4h-4z`);
     }
     let paths = '';
     for (const [c, d] of byColor) paths += `<path fill="${c}" d="${d}"/>`;
@@ -459,7 +715,7 @@ function renderSVG(D, o) {
   }
   const st = D.stage, next = STAGES[st + 1];
   const fill = next ? clamp((D.xp - STAGES[st].xp) / (next.xp - STAGES[st].xp), 0, 1) : 1;
-  const formName = D.form ? FORMS[D.form].name : (st < 3 ? 'form at PROCESS' : 'Core');
+  const formName = D.form ? FORMS[D.form].name : null;
   const vit = [['ENERGY', D.energy], ['MOOD', D.mood], ['REST', D.rest], ['BUILD', D.ciTracked ? D.health : null]];
   const color = v => v == null ? muted : v >= 60 ? good : v >= 30 ? warn : bad;
   const X = 352, BW = 160;
@@ -474,12 +730,12 @@ function renderSVG(D, o) {
   const muts = Object.keys(D.mutations || {}).filter(k => D.mutations[k]).map(k => MUTATIONS[k].name.toUpperCase());
   const status = statusLine(D, o.statusOpts);
   const affLine = [o.login ? '@' + o.login : null, aff ? SRC[aff].label + ' affinity' : null, `${D.commits} commits`].filter(Boolean).join(' · ');
-  const title = `${o.name || 'dmn'}: ${STAGES[st].name}${D.form ? ' ' + formName : ''}, ${D.xp} XP`;
+  const title = `${o.name || 'dmn'}: ${STAGES[st].name}${formName ? ' ' + formName : ''}, ${D.xp} XP`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="264" viewBox="0 0 640 264" role="img" aria-label="${esc(title)}">
 <title>${esc(title)}</title>
 <defs>
-<pattern id="dots" width="${cell}" height="${cell}" patternUnits="userSpaceOnUse"><rect x="1" y="1" width="6" height="6" rx="1" fill="${dot}"/></pattern>
-<filter id="glow" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<pattern id="dots" width="${cell}" height="${cell}" patternUnits="userSpaceOnUse"><rect width="4" height="4" rx=".6" fill="${dot}"/></pattern>
+<filter id="glow" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 <clipPath id="scr"><rect width="320" height="240" rx="8"/></clipPath>
 </defs>
 <style>
@@ -493,11 +749,11 @@ text{font-family:ui-monospace,SFMono-Regular,"Cascadia Mono",Menlo,Consolas,mono
 <rect width="320" height="240" fill="${screen}"/>
 <rect width="320" height="240" fill="url(#dots)"/>
 <g filter="url(#glow)">${frameSvg}</g>
-<text x="10" y="18" fill="#9AA5B5" font-size="10" letter-spacing=".8">${STAGES[st].name} · ${st}/5</text>
+<text x="10" y="18" fill="#9AA5B5" font-size="10" letter-spacing=".8">${STAGES[st].name} · ${st}/${MAX_STAGE}</text>
 <text x="310" y="18" fill="#9AA5B5" font-size="10" letter-spacing=".8" text-anchor="end">streak ${D.streak}d</text>
 </g>
 <text x="${X}" y="44" fill="${ink}" font-size="24" font-weight="700">${esc(o.name || 'dmn')}</text>
-<text x="${X}" y="66" fill="${accent}" font-size="13" font-weight="700">${STAGES[st].name}${D.form ? ' · ' + esc(formName.toUpperCase()) : ''}</text>
+<text x="${X}" y="66" fill="${accent}" font-size="13" font-weight="700">${STAGES[st].name}${formName ? ' · ' + esc(formName.toUpperCase()) : ''}</text>
 <text x="${X}" y="84" fill="${muted}" font-size="11">${esc(affLine)}</text>
 <rect x="${X}" y="98" width="274" height="6" rx="2" fill="${track}"/>
 <rect x="${X}" y="98" width="${(274 * fill).toFixed(1)}" height="6" rx="2" fill="${accent}"/>
@@ -511,8 +767,8 @@ ${muts.length ? `<text x="626" y="44" fill="${C.gold}" font-size="10" letter-spa
 }
 
 const PetCore = {
-  DAY, HOUR, SOURCES, SRC, STAGES, FORMS, MUTATIONS, PET, FIX_XP, GW, GH,
-  clamp, dayIdx, baseXP, mult, valid, mix, derive, traitAt, statusLine,
+  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
+  clamp, dayIdx, sessionXP, baseXP, mult, valid, mix, derive, gainFor, traitAt, statusLine,
   detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, scanGitHubRepo,
   build, renderSVG,
 };

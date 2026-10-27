@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const P = window.PetCore;
-const {DAY, HOUR, SOURCES, SRC, STAGES, FORMS, MUTATIONS, PET, clamp, dayIdx, baseXP, mult, valid} = P;
+const {DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, clamp, valid} = P;
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -15,6 +15,7 @@ const fmtWhen = ms => { const d = new Date(ms); return `${monthFmt.format(d)} ${
 const ago = ms => { const m = Math.max(0, Math.round((Date.now() - ms) / 6e4)); if (m < 1) return 'now'; if (m < 60) return m + 'm'; const h = Math.floor(m / 60); if (h < 24) return h + 'h'; return Math.floor(h / 24) + 'd'; };
 const newId = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const repoName = k => String(k || '').replace(/^g[hl]:/, '');
+const repoLabel = k => { const r = state.repos.find(x => x.key === k); return r ? r.name : repoName(k); };
 
 /* ---------- state ---------- */
 const freshState = () => ({v:2, name:'dmn', manual:[], auto:[], repos:[], ci:{}, events:[], lastScan:{gh:0, gl:0}, accounts:{gh:null, gl:null}, overrides:{}});
@@ -117,7 +118,7 @@ function fx(el, text) {
 }
 function evolve(st) {
   flash = 12;
-  const form = st >= 3 && D.form ? ' · ' + FORMS[D.form].name.toUpperCase() : '';
+  const form = st >= FORM_STAGE && D.form ? ' · ' + FORMS[D.form].name.toUpperCase() : '';
   setTimeout(() => fx($('#evofx'), `→ ${STAGES[st].name}${form}`), 600);
 }
 
@@ -291,12 +292,12 @@ function render() {
   const st = D.stage, aff = D.affinity, has = D.count > 0;
   document.documentElement.style.setProperty('--aff', aff ? `var(--src-${aff})` : 'var(--muted)');
   $('#petname').textContent = state.name || 'dmn';
-  $('#pill').textContent = `${STAGES[st].name} ${st}/5`;
+  $('#pill').textContent = `${STAGES[st].name} ${st}/${MAX_STAGE}`;
   const muts = Object.keys(D.mutations).filter(k => D.mutations[k]).map(k => MUTATIONS[k].name.toUpperCase());
-  const formTxt = st >= 3 ? `<b>${esc(FORMS[D.form || 'core'].name)}</b> form` : `form locks at PROCESS (${500 - D.xp} XP)`;
-  const affTxt = aff && st >= 2 ? ` · ${SRC[aff].label} crest` : '';
+  const formTxt = st >= FORM_STAGE ? `<b>${esc(FORMS[D.form || 'core'].name)}</b> ${esc(STAGES[st].body.toLowerCase())}` : `${esc(STAGES[st].body.toLowerCase())} · form locks at ${STAGES[FORM_STAGE].name} (${STAGES[FORM_STAGE].xp - D.xp} XP)`;
+  const affTxt = aff && st >= CREST_STAGE ? ` · ${SRC[aff].label} crest` : '';
   $('#formrow').innerHTML = formTxt + affTxt + (muts.length ? ` · <span class="mut">${muts.join(' · ')}</span>` : '');
-  $('#formrow').title = st >= 3 ? FORMS[D.form || 'core'].rule : 'At PROCESS, DAEMON and KERNEL the pet locks a form from your last 30 days of habits.';
+  $('#formrow').title = st >= FORM_STAGE ? FORMS[D.form || 'core'].rule : `From ${STAGES[FORM_STAGE].name} on, every evolution locks a form from your last 30 days of habits.`;
   const next = STAGES[st + 1];
   const fill = next ? clamp((D.xp - STAGES[st].xp) / (next.xp - STAGES[st].xp) * 100, 0, 100) : 100;
   $('#xpfill').style.width = fill.toFixed(1) + '%';
@@ -306,12 +307,12 @@ function render() {
     const tip = t === 'Build' ? (show ? `${D.ciPassing}/${D.ciTracked} recent repos green` : 'No CI results from repos you touched in the last 14 days') : t;
     return `<div class="vital" data-lv="${show ? lv(v) : 'ok'}" title="${esc(tip)}"><div class="top"><span>${t.toUpperCase()}</span><b>${show ? v : '—'}</b></div><div class="track"><i style="width:${show ? v : 0}%"></i></div></div>`;
   }).join('');
-  $('#hudstage').textContent = `${STAGES[st].name} · ${st}/5`;
+  $('#hudstage').textContent = `${STAGES[st].name} · ${st}/${MAX_STAGE}`;
   $('#hudup').textContent = has ? `streak ${D.streak}d` : 'no signal';
   $('#hudstatus').textContent = !ready ? '> booting daemon…'
-    : P.statusLine(D, {empty: settings.gh.connected || settings.gl.connected ? '> egg found. waiting for commits' : '> egg found. connect an account'});
+    : P.statusLine(D, {label: repoLabel, empty: settings.gh.connected || settings.gl.connected ? '> egg found. waiting for commits' : '> egg found. connect an account'});
   canvas.setAttribute('aria-label', has
-    ? `${state.name}, ${STAGES[st].name}${st >= 3 ? ' ' + FORMS[D.form || 'core'].name : ''}. Energy ${D.energy}, mood ${D.mood}, rest ${D.rest}${D.ciTracked ? ', build ' + D.health : ''}.`
+    ? `${state.name}, ${STAGES[st].name}${st >= FORM_STAGE ? ' ' + FORMS[D.form || 'core'].name : ''}. Energy ${D.energy}, mood ${D.mood}, rest ${D.rest}${D.ciTracked ? ', build ' + D.health : ''}.`
     : `${state.name} is still an egg.`);
   const sl = syncLine();
   const sync = $('#sync'); sync.textContent = sl.text; sync.className = sl.err ? 'err' : ''; sync.title = sl.text;
@@ -328,12 +329,12 @@ function renderPanel() {
   if (tab === 'setup') renderSetup();
 }
 function renderLog() {
-  const locked = [3, 4, 5].filter(k => D.forms[k]).map(k => `${STAGES[k].name} → <b>${esc(FORMS[D.forms[k]].name)}</b>`);
-  $('#evo').innerHTML = locked.length ? 'Evolution: ' + locked.join(' · ') : `Next form locks at PROCESS. Right now your habits point to <b>${esc(FORMS[P.traitAt(D.sorted, Date.now())].name)}</b>.`;
+  const locked = STAGES.map((x, k) => k).filter(k => k >= FORM_STAGE && D.forms[k]).map(k => `${STAGES[k].name} → <b>${esc(FORMS[D.forms[k]].name)}</b>`);
+  $('#evo').innerHTML = locked.length ? 'Evolution: ' + locked.join(' · ') : `Next form locks at ${STAGES[FORM_STAGE].name}. Right now your habits point to <b>${esc(FORMS[P.traitAt(D.sorted, Date.now())].name)}</b>.`;
   const rows = D.sorted.map(s => ({t: s.at, s})).concat(state.events.map(e => ({t: e.at, e}))).sort((a, b) => b.t - a.t).slice(0, 40);
   $('#logempty').hidden = rows.length > 0;
   $('#loglist').innerHTML = rows.map(({s, e}) => {
-    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoName(e.repo))}</div></div><span class="lxp">+${e.xp}</span><span></span></li>`;
+    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${e.xp}</span><span></span></li>`;
     const late = new Date(s.at).getHours() < 5;
     const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).join(' · ');
     const where = s.auto ? esc(s.note) : (s.sample ? 'sample' : 'manual');
@@ -410,17 +411,13 @@ function readDraft() {
   if (!(min >= 5 && min <= 720)) return {error: 'Minutes: 5 to 720.'};
   return {src: r.value, min, commits: clamp(Math.round(+$('#commits').value || 0), 0, 99), tests: $('#h-tests').checked, bug: $('#h-bug').checked, ship: $('#h-ship').checked, at: Date.now(), note: ''};
 }
-function previewXP(d) {
-  const day = dayIdx(d.at), days = new Set(D.days); days.add(day);
-  let st = 0; while (days.has(day - st)) st++;
-  return {xp: Math.round(baseXP(d) * mult(st)), mult: mult(st)};
-}
+const previewXP = d => P.gainFor(D, d);
 function updatePreview() {
   const d = readDraft();
   if (d.error) { $('#pvxp').textContent = '—'; $('#pvdetail').textContent = d.error; return; }
   const p = previewXP(d);
   $('#pvxp').textContent = `+${p.xp} XP`;
-  $('#pvdetail').textContent = `base ${Math.round(baseXP(d))} × ${p.mult.toFixed(2)} streak`;
+  $('#pvdetail').textContent = `base ${p.base} × ${p.mult.toFixed(2)} streak${p.capped ? ' · past daily cap' : ''}`;
 }
 $('#tab-feed').addEventListener('input', updatePreview);
 $$('.preset').forEach(b => b.addEventListener('click', () => { $('#min').value = b.dataset.min; updatePreview(); }));
