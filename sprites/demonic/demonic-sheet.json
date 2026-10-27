@@ -1,0 +1,90 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 48,
+  "framesPerStage": 4,
+  "frameMs": 180,
+  "groundRow": 41,
+  "rows": [
+    {
+      "stage": 0,
+      "name": "EGG",
+      "body": "Obsidian egg"
+    },
+    {
+      "stage": 1,
+      "name": "BIT",
+      "body": "Shadow slime"
+    },
+    {
+      "stage": 2,
+      "name": "NIBBLE",
+      "body": "Spider imp"
+    },
+    {
+      "stage": 3,
+      "name": "BYTE",
+      "body": "Impling"
+    },
+    {
+      "stage": 4,
+      "name": "WORD",
+      "body": "Hell kaiju"
+    },
+    {
+      "stage": 5,
+      "name": "PROCESS",
+      "body": "Hellhound"
+    },
+    {
+      "stage": 6,
+      "name": "THREAD",
+      "body": "Hell serpent"
+    },
+    {
+      "stage": 7,
+      "name": "DAEMON",
+      "body": "Demon"
+    },
+    {
+      "stage": 8,
+      "name": "SERVICE",
+      "body": "Infernal wyvern"
+    },
+    {
+      "stage": 9,
+      "name": "KERNEL",
+      "body": "Archdemon"
+    },
+    {
+      "stage": 10,
+      "name": "SINGULARITY",
+      "body": "Void lord"
+    }
+  ],
+  "palette": {
+    "skin": "#B3263A",
+    "limb": "#8E1C2F",
+    "far": "#521020",
+    "belly": "#D9573E",
+    "dark": "#7A2232",
+    "wing": "#62202F",
+    "vein": "#A3324A",
+    "bone": "#D8C9AA",
+    "horn": "#E6D6B6",
+    "obsidian": "#5A3A4A",
+    "eye": "#FFD23F",
+    "eyeHot": "#FF8A1F",
+    "pupil": "#160406",
+    "fire1": "#FF3B1F",
+    "fire2": "#FF8A1F",
+    "fire3": "#FFD23F",
+    "ember": "#FF6A2A",
+    "lava": "#FF7A1A",
+    "void": "#4A2036",
+    "metal": "#7A7480",
+    "metalHi": "#C4BEC8",
+    "rune": "#FF3350",
+    "fur": "#56313D",
+    "furHi": "#7A4652"
+  }
+}

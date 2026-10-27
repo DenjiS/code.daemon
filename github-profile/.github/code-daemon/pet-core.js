@@ -250,6 +250,15 @@ async function scanGitHubRepo(gql, nameWithOwner, since, uid, overrides) {
   return {repo, sessions: toSessions(repo, commits, rel, overrides), ci: head && head.s ? {s: head.s, at: head.at} : null};
 }
 
+/* ---------- themes: Classic is drawn below; others are sprite sets registered at load ---------- */
+const THEMES = {};
+const THEME_LIST = [{id: 'classic', name: 'Classic'}, {id: 'demonic', name: 'Demonic'}, {id: 'succubus', name: 'Succubus'}];
+function registerTheme(id, data) { if (id && data && data.stages && data.palettes) THEMES[id] = data; }
+const themeOf = id => (id && id !== 'classic' && THEMES[id]) ? THEMES[id] : null;
+const hasTheme = id => id === 'classic' || !!THEMES[id];
+const stageBody = (st, id) => { const T = themeOf(id); return (T && T.bodies && T.bodies[st]) || STAGES[st].body; };
+const themeColors = id => { const T = themeOf(id); return T ? {screen: T.screen, dot: T.dot} : null; };
+
 /* ======================================================================
    Renderer: 64 x 48 cells. Each creature is a list of shaded parts.
    ====================================================================== */
@@ -494,6 +503,8 @@ function plans(st, f, mo) {
 // Returns Map(index -> color) for frame f. opts: {screen, reduced}
 function build(D, f, opts) {
   opts = opts || {};
+  const T = themeOf(opts.theme);
+  if (T) return buildSprite(D, f, opts, T);
   const screen = opts.screen || '#080A0E', motion = !opts.reduced;
   const buf = new Map();
   const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) buf.set(K(x, y), c); };
@@ -679,6 +690,63 @@ function build(D, f, opts) {
   }
   return buf;
 }
+// Sprite themes: pre-drawn frames, recolored for the affinity, with status overlays on top.
+function buildSprite(D, f, opts, T) {
+  const screen = opts.screen || T.screen || '#080A0E', motion = !opts.reduced;
+  const buf = new Map();
+  const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) buf.set(K(x, y), c); };
+  const sprite = (rows, x0, y0, colors) => rows.forEach((row, j) => { for (let i = 0; i < row.length; i++) { const c = colors[row[i]]; if (c) put(x0 + i, y0 + j, c); } });
+  const st = Math.min(D.stage, MAX_STAGE), has = D.count > 0, mut = D.mutations || {};
+  const sleeping = has && st > 0 && D.energy < 20;
+  const pal = T.palettes[D.affinity] || T.palettes[T.default] || T.palettes[Object.keys(T.palettes)[0]];
+  const tinted = pal.map(c => {
+    let x = c;
+    if (mut.shiny) x = mix(x, C.gold, 0.2);
+    if (D.sick) x = mix(x, C.sick, D.critical ? 0.55 : 0.35);
+    if (sleeping) x = mix(x, screen, 0.25);
+    return x;
+  });
+  const fr = T.stages[st][(!motion || sleeping) ? 0 : ((f >> 1) % T.frames)], r = fr.r;
+  for (let i = 0; i < r.length; i += 4) for (let k = 0; k < r[i + 2]; k++) put(r[i + 1] + k, r[i], tinted[r[i + 3]]);
+  const [x0, y0, x1, y1] = fr.box, cx = Math.round((x0 + x1) / 2), cy = Math.round((y0 + y1) / 2), alt = motion ? (f >> 1) & 1 : 0;
+  const form = st >= FORM_STAGE ? D.form : null, body = PET[D.affinity] || PET.none;
+  // form accessories sit beside the sprite so they never cover the drawing
+  const L = Math.max(1, x0 - 9), R = Math.min(GW - 8, x1 + 2);
+  if (form === 'owl') sprite(['.###.', '##...', '#....', '#....', '##...', '.###.'], 3, 3, {'#': C.moon});
+  if (form === 'guardian') sprite(['sssssss', 'swww+ws', 'sw+++ws', 'sww+wws', '.sw+ws.', '..sws..', '...s...'], R, cy - 2, {s: C.steel, w: C.steelDark, '+': C.white});
+  if (form === 'debugger') sprite(['.s.s', '.sss', '..s.', '.s..', 's...'], R + 1, cy - 2 + alt, {s: C.steel});
+  if (form === 'shipper') {
+    const bx = L, by = Math.min(GH - 7, y1 - 5);
+    sprite(['bbbbbbb', 'bhbbbhb', 'bbhbhbb', 'bbbhbbb', 'bbhbhbb', 'bhbbbhb'], bx, by, {b: C.wood, h: C.woodDark});
+    for (let y = by - 6; y < by; y++) put(bx + 6, y, C.steel);
+    sprite(['ff.', 'fff', 'ff.'], bx + 7, by - 6 + alt, {f: body});
+  }
+  if (form === 'streaker') sprite(alt ? ['..y..', '.yoy.', 'oyyyo', 'oryro', '.rrr.'] : ['.y...', '.yo..', 'oyyo.', 'oryro', '.rrr.'], L + 2, Math.min(GH - 6, y1 - 4), {r: C.red, o: C.orange, y: C.yellow});
+  if (form === 'polyglot' && D.srcs30) D.srcs30.slice(0, 5).forEach((src, i) => sprite(['##', '##'], L + 4, y0 + 2 + i * 3, {'#': PET[src] || body}));
+  if (form === 'vibe') {
+    const nt = motion ? (f >> 1) % 8 : 2;
+    sprite(['.##', '.#.', '##.'], R + 1 + (nt >> 2), Math.max(0, cy - nt), {'#': C.note});
+    if (nt > 3) sprite(['#', '#', '#'], L + 5, Math.max(0, cy + 4 - nt), {'#': mix(C.note, body, 0.4)});
+  }
+  if (mut.cursed) sprite(alt ? ['.r.', 'rrr', '.r.'] : ['r.r', '.r.', 'r.r'], L + 3, Math.max(0, y0), {r: C.curse});
+  if (mut.crowned && st >= CREST_STAGE) sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], cx - 3, Math.max(0, y0 - 4), {y: C.gold, g: C.gem});
+  if (mut.shiny && motion) {
+    const sp = [[x0 + 1, y0 + 4], [x1 - 1, y0 + 2], [cx, y0 - 2], [x1 - 2, G - 4], [x0 + 2, G - 8]];
+    const [sx, sy] = sp[(f >> 1) % sp.length];
+    put(sx, sy, C.spark); [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => put(sx + dx, sy + dy, mix(C.spark, screen, 0.5)));
+  }
+  if (D.sick) {
+    const mx = Math.min(GW - 2, x1 + 2), my = Math.max(2, y0);
+    if (!motion || ((f >> 1) & 1)) { for (let j = 0; j < 4; j++) put(mx, my + j, C.alarm); put(mx, my + 5, C.alarm); }
+    if (!motion || ((f >> 2) & 1)) { put(x1 - 2, y0 + 4, C.drop); put(x1 - 2, y0 + 5, C.drop); put(x1 - 3, y0 + 6, C.drop); }
+  }
+  if (sleeping) {
+    const k = motion ? ((f >> 3) % 3) : 1;
+    sprite(['####', '..#.', '.#..', '####'], Math.min(GW - 5, x1 - 3 + k * 2), Math.max(0, y0 - 4 - k * 3), {'#': k === 2 ? mix('#ffffff', screen, 0.5) : '#E8ECF4'});
+  }
+  return buf;
+}
+
 // draw one shaded part: top edge lit, bottom and right edges shaded
 function paint(put, m, color, screen, extra, glow) {
   const sh = mix(color, screen, 0.45), hi = mix(color, '#ffffff', 0.45);
@@ -698,14 +766,14 @@ function paint(put, m, color, screen, extra, glow) {
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 function renderSVG(D, o) {
   o = o || {};
-  const screen = '#080A0E', dot = '#141820', cell = 5, frames = 16, loop = 2;
+  const tc = themeColors(o.theme), screen = tc ? tc.screen : '#080A0E', dot = tc ? tc.dot : '#141820', cell = 5, frames = 16, loop = 2;
   const ink = '#E3E7ED', muted = '#8C95A4', track = '#20262F', panel = '#151920', line = '#272D37';
   const good = '#49C383', warn = '#E3AE3C', bad = '#EF6B60';
   const aff = D.affinity, accent = PET[aff || 'none'];
   let frameSvg = '';
   for (let f = 0; f < frames; f++) {
     const byColor = new Map();
-    for (const [k, c] of build(D, f, {screen})) {
+    for (const [k, c] of build(D, f, {screen, theme: o.theme})) {
       const x = (k % GW) * cell, y = ((k / GW) | 0) * cell;
       byColor.set(c, (byColor.get(c) || '') + `M${x} ${y}h4v4h-4z`);
     }
@@ -715,7 +783,7 @@ function renderSVG(D, o) {
   }
   const st = D.stage, next = STAGES[st + 1];
   const fill = next ? clamp((D.xp - STAGES[st].xp) / (next.xp - STAGES[st].xp), 0, 1) : 1;
-  const formName = D.form ? FORMS[D.form].name : null;
+  const formName = D.form ? FORMS[D.form].name : null, body = stageBody(st, o.theme);
   const vit = [['ENERGY', D.energy], ['MOOD', D.mood], ['REST', D.rest], ['BUILD', D.ciTracked ? D.health : null]];
   const color = v => v == null ? muted : v >= 60 ? good : v >= 30 ? warn : bad;
   const X = 352, BW = 160;
@@ -753,7 +821,7 @@ text{font-family:ui-monospace,SFMono-Regular,"Cascadia Mono",Menlo,Consolas,mono
 <text x="310" y="18" fill="#9AA5B5" font-size="10" letter-spacing=".8" text-anchor="end">streak ${D.streak}d</text>
 </g>
 <text x="${X}" y="44" fill="${ink}" font-size="24" font-weight="700">${esc(o.name || 'dmn')}</text>
-<text x="${X}" y="66" fill="${accent}" font-size="13" font-weight="700">${STAGES[st].name}${formName ? ' · ' + esc(formName.toUpperCase()) : ''}</text>
+<text x="${X}" y="66" fill="${accent}" font-size="13" font-weight="700">${STAGES[st].name}${formName ? ' · ' + esc(formName.toUpperCase()) : ''} <tspan fill="${muted}" font-weight="400" font-size="11">${esc(body.toLowerCase())}</tspan></text>
 <text x="${X}" y="84" fill="${muted}" font-size="11">${esc(affLine)}</text>
 <rect x="${X}" y="98" width="274" height="6" rx="2" fill="${track}"/>
 <rect x="${X}" y="98" width="${(274 * fill).toFixed(1)}" height="6" rx="2" fill="${accent}"/>
@@ -770,7 +838,7 @@ const PetCore = {
   DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
   clamp, dayIdx, sessionXP, baseXP, mult, valid, mix, derive, gainFor, traitAt, statusLine,
   detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, scanGitHubRepo,
-  build, renderSVG,
+  build, renderSVG, THEMES, THEME_LIST, registerTheme, hasTheme, stageBody, themeColors,
 };
 root.PetCore = PetCore;
 if (typeof module !== 'undefined' && module.exports) module.exports = PetCore;

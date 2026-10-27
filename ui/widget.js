@@ -18,7 +18,7 @@ const repoName = k => String(k || '').replace(/^g[hl]:/, '');
 const repoLabel = k => { const r = state.repos.find(x => x.key === k); return r ? r.name : repoName(k); };
 
 /* ---------- state ---------- */
-const freshState = () => ({v:2, name:'dmn', manual:[], auto:[], repos:[], ci:{}, events:[], lastScan:{gh:0, gl:0}, accounts:{gh:null, gl:null}, overrides:{}});
+const freshState = () => ({v:2, name:'dmn', theme:'classic', manual:[], auto:[], repos:[], ci:{}, events:[], lastScan:{gh:0, gl:0}, accounts:{gh:null, gl:null}, overrides:{}});
 function normSession(b) {
   b = b || {};
   return {
@@ -36,6 +36,7 @@ function loadState(text) {
   if (!o || typeof o !== 'object') return s;
   const arr = x => Array.isArray(x) ? x : [];
   if (typeof o.name === 'string' && o.name.trim()) s.name = o.name.trim().slice(0, 16);
+  if (typeof o.theme === 'string' && P.hasTheme(o.theme)) s.theme = o.theme;
   s.manual = arr(o.manual).map(normSession).filter(valid);
   s.auto = arr(o.auto).map(normSession).filter(valid);
   s.repos = arr(o.repos).filter(r => r && r.key).map(r => ({key:String(r.key), name:String(r.name || r.key), prov:r.prov === 'gl' ? 'gl' : 'gh', kind:String(r.kind || ''), last:+r.last || 0}));
@@ -69,6 +70,22 @@ function save() {
   }, 300);
 }
 
+/* ---------- themes ---------- */
+const THEME_DOT = {classic: 'var(--muted)', demonic: '#D8322A', succubus: '#FF5C9E'};
+function applyTheme() {
+  const tc = P.themeColors(state.theme), el = $('.screen');
+  if (el) { if (tc) { el.style.setProperty('--screen', tc.screen); el.style.setProperty('--screen-dot', tc.dot); } else { el.style.removeProperty('--screen'); el.style.removeProperty('--screen-dot'); } }
+}
+function renderThemes() {
+  const box = $('#themes'); if (!box) return;
+  box.innerHTML = P.THEME_LIST.filter(t => P.hasTheme(t.id)).map(t =>
+    `<label class="chip" style="--c:${THEME_DOT[t.id] || 'var(--muted)'}"><input type="radio" name="theme" value="${t.id}"${state.theme === t.id ? ' checked' : ''}><span>${esc(t.name)}</span></label>`).join('');
+}
+function setTheme(id) {
+  if (!P.hasTheme(id) || id === state.theme) return;
+  state.theme = id; save(); applyTheme(); render(); paint();
+}
+
 /* ---------- pixel screen ---------- */
 const canvas = $('#pet'), ctx = canvas.getContext('2d');
 const theme = {screen:'#0D1015', dot:'#181D25'};
@@ -83,17 +100,18 @@ function paint() {
   const W = canvas.width, H = canvas.height;
   if (!W || !H) return;
   const GW = P.GW, GH = P.GH, cell = W / GW, gap = Math.max(1, cell * 0.14), r = cell - gap;
-  const buf = P.build(D, frame, {screen: theme.screen, reduced});
+  const tc = P.themeColors(state.theme), screen = tc ? tc.screen : theme.screen, dot = tc ? tc.dot : theme.dot;
+  const buf = P.build(D, frame, {screen, reduced, theme: state.theme});
   const body = PET[D.affinity || 'none'];
   ctx.shadowBlur = 0;
-  ctx.fillStyle = theme.screen; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = flash > 0 && (flash & 1) ? P.mix(theme.dot, body, 0.35) : theme.dot;
+  ctx.fillStyle = screen; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = flash > 0 && (flash & 1) ? P.mix(dot, body, 0.35) : dot;
   for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) if (!buf.has(y * GW + x)) ctx.fillRect(x * cell + gap / 2, y * cell + gap / 2, r, r);
   ctx.save();
   ctx.shadowBlur = cell * 0.7;
   for (const [k, c] of buf) {
     const x = k % GW, y = (k / GW) | 0;
-    ctx.fillStyle = c; ctx.shadowColor = c === theme.screen ? 'transparent' : c + '80';
+    ctx.fillStyle = c; ctx.shadowColor = c === screen ? 'transparent' : c + '80';
     ctx.fillRect(x * cell + gap / 2, y * cell + gap / 2, r, r);
   }
   ctx.restore();
@@ -289,12 +307,14 @@ function syncLine() {
 }
 function render() {
   D = deriveNow();
+  applyTheme();
   const st = D.stage, aff = D.affinity, has = D.count > 0;
   document.documentElement.style.setProperty('--aff', aff ? `var(--src-${aff})` : 'var(--muted)');
   $('#petname').textContent = state.name || 'dmn';
   $('#pill').textContent = `${STAGES[st].name} ${st}/${MAX_STAGE}`;
   const muts = Object.keys(D.mutations).filter(k => D.mutations[k]).map(k => MUTATIONS[k].name.toUpperCase());
-  const formTxt = st >= FORM_STAGE ? `<b>${esc(FORMS[D.form || 'core'].name)}</b> ${esc(STAGES[st].body.toLowerCase())}` : `${esc(STAGES[st].body.toLowerCase())} · form locks at ${STAGES[FORM_STAGE].name} (${STAGES[FORM_STAGE].xp - D.xp} XP)`;
+  const bodyName = esc(P.stageBody(st, state.theme).toLowerCase());
+  const formTxt = st >= FORM_STAGE ? `<b>${esc(FORMS[D.form || 'core'].name)}</b> ${bodyName}` : `${bodyName} · form locks at ${STAGES[FORM_STAGE].name} (${STAGES[FORM_STAGE].xp - D.xp} XP)`;
   const affTxt = aff && st >= CREST_STAGE ? ` · ${SRC[aff].label} crest` : '';
   $('#formrow').innerHTML = formTxt + affTxt + (muts.length ? ` · <span class="mut">${muts.join(' · ')}</span>` : '');
   $('#formrow').title = st >= FORM_STAGE ? FORMS[D.form || 'core'].rule : `From ${STAGES[FORM_STAGE].name} on, every evolution locks a form from your last 30 days of habits.`;
@@ -346,6 +366,7 @@ function renderLog() {
 }
 function renderSetup() {
   $('#previewnote').hidden = !!wv;
+  renderThemes();
   for (const p of ['gh', 'gl']) {
     const el = $(`#${p}-state`), on = settings[p].connected;
     el.className = 'astate' + (errors[p] ? ' err' : on && state.accounts[p] ? ' ok' : '');
@@ -473,6 +494,7 @@ $('#repos').addEventListener('change', e => {
   for (const s of state.auto) if (s.repo === key) s.src = v || s.kind;
   save(); render();
 });
+$('#themes').addEventListener('change', e => { if (e.target.name === 'theme') setTheme(e.target.value); });
 $('#t-top').addEventListener('change', e => post({type:'topmost', on: e.target.checked}));
 $('#t-auto').addEventListener('change', e => post({type:'autostart', on: e.target.checked}));
 $('#b-data').addEventListener('click', () => post({type:'openData'}));

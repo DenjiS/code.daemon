@@ -8,6 +8,7 @@
                   Without it the workflow's GITHUB_TOKEN sees public activity only.
     PET_LOGIN     GitHub login. Defaults to the repository owner.
     PET_NAME      Pet name shown on the card (default dmn).
+    PET_THEME     classic (default), demonic or succubus.
     PET_OUT       Output folder (default code-daemon).
     TZ            Time zone used for late-night sessions and streak days.
 */
@@ -20,6 +21,12 @@ const DAY = P.DAY;
 const token = process.env.PET_TOKEN || process.env.GITHUB_TOKEN;
 const login = process.env.PET_LOGIN || process.env.GITHUB_REPOSITORY_OWNER;
 const petName = String(process.env.PET_NAME || 'dmn').slice(0, 16);
+const petTheme = String(process.env.PET_THEME || 'classic').toLowerCase().trim();
+if (petTheme !== 'classic') {
+  const file = path.join(__dirname, 'themes', petTheme.replace(/[^a-z0-9-]/g, '') + '.js');
+  if (fs.existsSync(file)) P.registerTheme(petTheme, require(file));
+  else console.warn(`Theme "${petTheme}" not found in .github/code-daemon/themes, using classic.`);
+}
 const outDir = path.resolve(process.env.PET_OUT || 'code-daemon');
 const usingPat = !!process.env.PET_TOKEN;
 
@@ -96,7 +103,7 @@ const Q_USER = `query($login:String!,$from:DateTime!){user(login:$login){id logi
   const label = k => privateRepos.has(k) ? 'a private repo' : String(k).replace(/^g[hl]:/, '');
   const updated = new Date(now).toISOString().slice(0, 10);
   fs.mkdirSync(outDir, {recursive: true});
-  fs.writeFileSync(path.join(outDir, 'pet.svg'), P.renderSVG(D, {name: petName, login: u.login, updated, statusOpts: {label}}));
+  fs.writeFileSync(path.join(outDir, 'pet.svg'), P.renderSVG(D, {name: petName, login: u.login, updated, statusOpts: {label}, theme: P.hasTheme(petTheme) ? petTheme : 'classic'}));
   const compact = s => ({id: s.id, src: s.src, repo: s.repo, min: s.min, commits: s.commits, tests: s.tests || undefined, bug: s.bug || undefined, ship: s.ship || undefined, at: s.at});
   fs.writeFileSync(statePath, JSON.stringify({
     lastRun: now, private: [...privateRepos], ci: upd.ci, events,

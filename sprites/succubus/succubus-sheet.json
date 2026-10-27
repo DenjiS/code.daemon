@@ -1,0 +1,71 @@
+{
+  "frameWidth": 64,
+  "frameHeight": 48,
+  "framesPerStage": 4,
+  "frameMs": 200,
+  "groundRow": 41,
+  "sheets": {
+    "github": "succubus-sheet-github.png",
+    "gitlab": "succubus-sheet-gitlab.png",
+    "local": "succubus-sheet-local.png",
+    "unity": "succubus-sheet-unity.png",
+    "unreal": "succubus-sheet-unreal.png"
+  },
+  "rows": [
+    {
+      "stage": 0,
+      "name": "EGG",
+      "body": "Heart egg"
+    },
+    {
+      "stage": 1,
+      "name": "BIT",
+      "body": "Imp slime"
+    },
+    {
+      "stage": 2,
+      "name": "NIBBLE",
+      "body": "Bat imp"
+    },
+    {
+      "stage": 3,
+      "name": "BYTE",
+      "body": "Chibi imp"
+    },
+    {
+      "stage": 4,
+      "name": "WORD",
+      "body": "Chibi succubus"
+    },
+    {
+      "stage": 5,
+      "name": "PROCESS",
+      "body": "Young succubus"
+    },
+    {
+      "stage": 6,
+      "name": "THREAD",
+      "body": "Lamia"
+    },
+    {
+      "stage": 7,
+      "name": "DAEMON",
+      "body": "Succubus"
+    },
+    {
+      "stage": 8,
+      "name": "SERVICE",
+      "body": "Flying succubus"
+    },
+    {
+      "stage": 9,
+      "name": "KERNEL",
+      "body": "Succubus queen"
+    },
+    {
+      "stage": 10,
+      "name": "SINGULARITY",
+      "body": "Ascended"
+    }
+  ]
+}

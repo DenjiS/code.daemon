@@ -109,6 +109,7 @@ button,input,select{font:inherit;color:inherit}
 .chip span em{font-style:normal;color:var(--muted);font-size:10px}
 .chip input:checked+span{border-color:var(--c,var(--ink));background:color-mix(in srgb,var(--c,var(--ink)) 13%,var(--panel))}
 .chip.hab input:checked+span::before{background:var(--ink);box-shadow:none}
+.themes .chip span::before{background:var(--c,var(--muted))}
 .chip input:focus-visible+span{outline:2px solid var(--ink);outline-offset:1px}
 .frow{display:flex;align-items:center;gap:5px}
 .frow .lbl{width:58px;flex:none}
@@ -226,6 +227,8 @@ button,input,select{font:inherit;color:inherit}
 
       <div class="tab" id="tab-setup" hidden>
         <p class="hint" id="previewnote" hidden>Preview mode. Start the widget with “Start code.daemon.vbs” to connect accounts.</p>
+        <h3 class="sub"><span>Theme</span></h3>
+        <div class="chips themes" id="themes" role="radiogroup" aria-label="Pet theme"></div>
         <section class="acct" style="--c:var(--src-github)">
           <div class="ahead"><span class="aname"><i></i>GitHub</span><span class="astate" id="gh-state">not connected</span></div>
           <div class="arow"><input class="inp" id="gh-token" type="password" placeholder="ghp_… or github_pat_…" spellcheck="false" autocomplete="off" aria-label="GitHub token"><button class="sbtn" id="gh-save" type="button">Connect</button></div>
@@ -252,6 +255,8 @@ button,input,select{font:inherit;color:inherit}
 </div>
 
 <script src="pet-core.js"></script>
+<script src="themes/demonic.js"></script>
+<script src="themes/succubus.js"></script>
 <script src="widget.js"></script>
 </body>
 </html>
