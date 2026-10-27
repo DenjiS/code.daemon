@@ -87,8 +87,30 @@ catch { Show-Error "Microsoft Edge WebView2 Runtime is not installed.`nInstall i
 function Write-TextAtomic([string]$path, [string]$text) {
   $tmp = "$path.tmp"
   [IO.File]::WriteAllText($tmp, $text, (New-Object System.Text.UTF8Encoding($false)))
-  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($tmp, $path, $null) } else { [IO.File]::Move($tmp, $path) }
+  if (Test-Path -LiteralPath $path) {
+    # PowerShell turns a plain $null into "" for string parameters, and File.Replace rejects "" as a path.
+    # [NullString]::Value passes a real null: replace without a backup file.
+    try { [IO.File]::Replace($tmp, $path, [NullString]::Value) }
+    catch { [IO.File]::Copy($tmp, $path, $true); [IO.File]::Delete($tmp) }
+  } else { [IO.File]::Move($tmp, $path) }
 }
+
+# Older versions could not replace an existing file, so the newest data stayed in "<file>.tmp".
+# If such a .tmp is newer than the file and is valid JSON, take it.
+function Restore-FromTmp([string]$path) {
+  $tmp = "$path.tmp"
+  if (-not (Test-Path -LiteralPath $tmp)) { return }
+  try {
+    $text = [IO.File]::ReadAllText($tmp)
+    if (-not $text.Trim()) { throw 'empty file' }
+    $null = $text | ConvertFrom-Json
+    $newer = -not (Test-Path -LiteralPath $path) -or ((Get-Item -LiteralPath $tmp).LastWriteTimeUtc -gt (Get-Item -LiteralPath $path).LastWriteTimeUtc)
+    if ($newer) { Write-TextAtomic $path $text; Write-Log "restored $path from .tmp" }
+    else { [IO.File]::Delete($tmp) }
+  } catch { Write-Log "skip $tmp`: $($_.Exception.Message)" }
+}
+Restore-FromTmp $SetPath
+Restore-FromTmp $SavePath
 
 function Read-Settings {
   $s = @{ ghToken = $null; glToken = $null; glUrl = 'https://gitlab.com'; topmost = $true; expanded = $false; x = $null; y = $null }
@@ -96,7 +118,11 @@ function Read-Settings {
     try {
       $o = [IO.File]::ReadAllText($SetPath) | ConvertFrom-Json
       foreach ($k in @('ghToken', 'glToken', 'glUrl', 'topmost', 'expanded', 'x', 'y')) { if ($null -ne $o.$k) { $s[$k] = $o.$k } }
-    } catch { Write-Log "settings unreadable: $($_.Exception.Message)" }
+    } catch {
+      # Keep the broken file instead of overwriting it with empty tokens on the next save.
+      Write-Log "settings unreadable: $($_.Exception.Message)"
+      try { Copy-Item -LiteralPath $SetPath -Destination "$SetPath.broken" -Force } catch {}
+    }
   }
   return $s
 }
