@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- The page talks only to the host (postMessage). It loads nothing from the network and runs no inline script. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>code.daemon</title>
 <style>
 @font-face{font-family:"Martian Mono";src:url("fonts/martian-mono-latin-700-normal.woff2") format("woff2");font-weight:700;font-display:swap}
@@ -232,7 +234,7 @@ button,input,select{font:inherit;color:inherit}
         <section class="acct" style="--c:var(--src-github)">
           <div class="ahead"><span class="aname"><i></i>GitHub</span><span class="astate" id="gh-state">not connected</span></div>
           <div class="arow"><input class="inp" id="gh-token" type="password" placeholder="ghp_… or github_pat_…" spellcheck="false" autocomplete="off" aria-label="GitHub token"><button class="sbtn" id="gh-save" type="button">Connect</button></div>
-          <p class="hint">Classic token with <code>repo</code> scope. Fine-grained works too: Contents, Metadata, Commit statuses and Actions, all read-only. <a href="https://github.com/settings/tokens/new?scopes=repo,read:user&amp;description=code.daemon" target="_blank" rel="noopener">Create one</a><span id="gh-clearwrap" hidden> · <button class="link" id="gh-clear" type="button">Disconnect</button></span></p>
+          <p class="hint">Safest: a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>, read-only Contents, Metadata, Commit statuses and Actions. It covers one owner (you or one org). A <a href="https://github.com/settings/tokens/new?scopes=repo,read:user&amp;description=code.daemon" target="_blank" rel="noopener">classic token</a> with <code>repo</code> sees every repo, but can also write to them.<span id="gh-clearwrap" hidden> · <button class="link" id="gh-clear" type="button">Disconnect</button></span></p>
         </section>
         <section class="acct" style="--c:var(--src-gitlab)">
           <div class="ahead"><span class="aname"><i></i>GitLab</span><span class="astate" id="gl-state">not connected</span></div>
@@ -243,7 +245,7 @@ button,input,select{font:inherit;color:inherit}
         <div class="arow" style="align-items:center"><button class="sbtn" id="scan2" type="button">Rescan now</button><button class="sbtn" id="scanfull" type="button" title="Re-read the last 180 days">Full rescan</button></div>
         <p class="hint" id="scaninfo"></p>
         <h3 class="sub"><span>Repos with your commits</span><span id="repocount"></span></h3>
-        <p class="hint">CI column: latest run on the branch you pushed last. A red build in a repo you touched this fortnight makes the pet sick; turning it green earns +15 XP.</p>
+        <p class="hint">CI column: latest run on the branch you pushed last. A red build in a repo you touched this fortnight makes the pet sick; turning the same branch green earns +15 XP, once a day per repo.</p>
         <ul class="repos" id="repos"></ul>
         <p class="hint">Unity and Unreal repos are detected from <code>ProjectSettings/</code> + <code>Assets/</code> and <code>*.uproject</code>. Pick a source to override.</p>
         <label class="tog"><input type="checkbox" id="t-top"> Always on top</label>

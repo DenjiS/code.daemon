@@ -15,11 +15,12 @@ A pixel pet for Windows that grows from your coding habits. It reads your commit
 | `sprites/` | Source sprite sheets: 11 stages × 4 frames of 64 × 48 |
 | `github-profile/` | GitHub Action that puts the same pet, animated, on your GitHub profile |
 | `lib/` | Microsoft WebView2 SDK (WinForms) and native loaders |
+| `tests/` | Engine, profile Action and widget tests: `npm install`, then `npm test` (Node 22+) |
 
 ## Run the widget
 
 1. Double-click `Start code.daemon.vbs`. The pet appears in the bottom-right corner, with a tray icon.
-2. In **Setup**, paste a GitHub token (classic, `repo` scope) and/or a GitLab token (`read_api` + `read_user`).
+2. In **Setup**, paste a GitHub token and/or a GitLab token (`read_api` + `read_user`). For GitHub a fine-grained token with read-only Contents, Metadata, Commit statuses and Actions is safest; it covers one owner. A classic token with `repo` sees every repo but can also write to them. The widget host only lets the page send read-only GraphQL queries to GitHub and GET requests to the GitLab API.
 3. The first scan reads 180 days. After that it rescans every 15 minutes.
 
 If nothing appears, run `Start code.daemon (debug).cmd` to see errors. Requires Windows 10/11 with the WebView2 Runtime.
@@ -30,6 +31,7 @@ If nothing appears, run `Start code.daemon (debug).cmd` to see errors. Requires 
 - **Streak**: +3% per consecutive coding day, up to +30%.
 - **Daily soft cap**: past 90 XP in a day, extra XP counts at 15%. Marathon days still count, they just can't carry the pet alone.
 - **CI**: turning a red build green on the same branch earns +15 XP, at most once a day per repo. It counts toward the daily soft cap.
+- **Commits** are matched by author email (on GitLab, by name only when it shows no email). A commit rebased or cherry-picked onto another branch counts once.
 - **Rescans**: the widget re-reads the last 3 days on every scan, starting at the beginning of a session so none is cut in two. A repo that fails to scan keeps its saved sessions until the next scan.
 
 | Stage | XP | Body |
@@ -51,7 +53,7 @@ Rough pace: a heavy daily vibe-coding habit reaches KERNEL in about 6 months and
 - **Crest** (from NIBBLE): the source with the most XP in 30 days. GitHub branch antenna, GitLab pipeline crest, Local `>_` mouth, Unity companion cube, Unreal material sheen. Unity and Unreal repos are detected from `ProjectSettings/` + `Assets/` and `*.uproject`.
 - **Forms** (from WORD): every evolution locks a form from your last 30 days. Guardian (tests, shield), Debugger (bug fixes, wrench), Night Owl (late nights, moon and glowing eyes), Shipper (releases, crate), Streaker (7+ day streak, fire), Polyglot (4+ sources, stripes), Vibecoder (10+ commits per session, headphones and notes), or Core.
 - **Mutations**: Shiny (30-day streak), Cursed (coded on a Friday the 13th), Crowned (1000 commits).
-- **Vitals**: Energy (recent minutes, 24 h half-life), Mood (streak, variety, tests and fixes), Rest (late nights and marathons), Build (CI health of repos touched in 14 days; a red build makes the pet sick).
+- **Vitals**: Energy (recent minutes, 24 h half-life), Mood (streak, variety, tests and fixes), Rest (sessions ending 23:00–05:00 and marathons), Build (CI health of repos touched in 14 days; a red build makes the pet sick).
 
 The pet is drawn on a 64 × 48 dot-matrix grid from shaded body parts, so each stage has its own silhouette and animation (bouncing, walking, slithering, wing flaps, floating).
 
@@ -85,9 +87,13 @@ To add a theme, draw an 11 × 4 sheet of 64 × 48 frames (rows = stages, columns
 
 See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `slavic`, `demonic` or `succubus`.
 
+## Development
+
+`npm test` runs the tests. `ui/pet-core.js` and `ui/themes/` have copies in `github-profile/.github/code-daemon/`; after changing them, copy them over (a test checks they match). `tests/host.tests.ps1` checks `CodeDaemon.ps1` (parse, file writer, query filter); CI runs it with Windows PowerShell 5.1.
+
 ## Data
 
-- `%APPDATA%\CodeDaemon\save.json`: pet, sessions, repo list, CI state
+- `%APPDATA%\CodeDaemon\save.json`: pet, sessions, repo list, CI state (`save.json.bak` is the previous version)
 - `%APPDATA%\CodeDaemon\settings.json`: tokens (DPAPI, current user only), window position
 - `%LOCALAPPDATA%\CodeDaemon\host.log`: errors
 

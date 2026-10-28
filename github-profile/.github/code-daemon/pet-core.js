@@ -69,6 +69,8 @@ const softCap = v => v <= DAY_SOFT_CAP ? v : DAY_SOFT_CAP + (v - DAY_SOFT_CAP) *
 const valid = s => !!(s && SRC[s.src] && Number.isFinite(s.min) && s.min > 0 && Number.isFinite(s.at));
 const isLate = ms => { const h = new Date(ms).getHours(); return h >= 23 || h < 5; };
 const SESSION_GAP = 2 * HOUR;  // commits closer than this join one session
+// Same author time and title = the same commit, rebased or cherry-picked onto another branch.
+const commitKey = (t, msg) => t + '|' + String(msg || '').trim();
 
 /* ---------- rescans ----------
    A rescan re-reads commits from `since` and rebuilds the sessions after it. If `since` fell inside a session,
@@ -265,8 +267,17 @@ async function scanGitHubRepo(gql, nameWithOwner, since, uid, overrides) {
   if (!r) return null;
   const entries = ((r.object && r.object.entries) || []).map(e => ({name: e.name, dir: e.type === 'tree'}));
   const kind = detectKind(entries) || 'github';
-  const seen = new Map();
-  const add = nodes => { let fresh = 0; for (const c of nodes) if (c && !seen.has(c.oid)) { seen.set(c.oid, {oid: c.oid, t: Date.parse(c.authoredDate), msg: c.messageHeadline || ''}); fresh++; } return fresh; };
+  const seen = new Map(), oids = new Set();
+  const add = nodes => {
+    let fresh = 0;
+    for (const c of nodes) {
+      if (!c || oids.has(c.oid)) continue;
+      oids.add(c.oid); fresh++;
+      const t = Date.parse(c.authoredDate), msg = c.messageHeadline || '', key = commitKey(t, msg);
+      if (!seen.has(key)) seen.set(key, {oid: c.oid, t, msg});
+    }
+    return fresh;
+  };
   let head = null;
   const more = [];
   for (const ref of (r.refs && r.refs.nodes) || []) {
@@ -1432,7 +1443,7 @@ ${muts.length ? `<text x="626" y="44" fill="${C.gold}" font-size="10" letter-spa
 const PetCore = {
   DAY, HOUR, isLate, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
   clamp, dayIdx, sessionXP, baseXP, mult, valid, mix, derive, gainFor, traitAt, statusLine,
-  SESSION_GAP, sessionStart, rescanFrom,
+  SESSION_GAP, sessionStart, rescanFrom, commitKey,
   detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   build, renderSVG, THEMES, THEME_LIST, registerTheme, hasTheme, stageBody, themeColors,
 };

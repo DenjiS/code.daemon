@@ -61,15 +61,18 @@ const deriveNow = () => P.derive(allSessions(), Date.now(), {ci: state.ci, event
 let D = deriveNow();
 
 function post(m) { if (wv) wv.postMessage(m); }
-let saveTimer = null;
-function save() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const json = JSON.stringify(state);
-    if (wv) wv.postMessage('SAVE:' + json);
-    else { try { localStorage.setItem('code-daemon.widget', json); } catch (e) {} }
-  }, 300);
+let saveTimer = null, dirty = false;
+function flushSave() {
+  clearTimeout(saveTimer); saveTimer = null;
+  if (!dirty) return;  // never overwrite the save file with a state that wasn't loaded or changed
+  dirty = false;
+  const json = JSON.stringify(state);
+  if (wv) wv.postMessage('SAVE:' + json);
+  else { try { localStorage.setItem('code-daemon.widget', json); } catch (e) {} }
 }
+function save() { dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 300); }
+// Quit writes any pending change first; the host waits for the 'quit' message that follows it.
+function quit() { commitName(true); flushSave(); post({type:'quit'}); }
 
 /* ---------- themes ---------- */
 const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', slavic: '#3D6BE0', demonic: '#D8322A', succubus: '#FF5C9E'};
@@ -241,8 +244,10 @@ async function scanGitLab(since, now) {
       if (!Array.isArray(list)) { failed.add('gl:' + pr.id); return; }  // error page: keep its saved sessions this time
       if (!list.length) break;
       for (const c of list) {
-        const mine = emails.has(String(c.author_email || '').toLowerCase()) || (me.name && c.author_name === me.name);
-        if (mine && !seen.has(c.id)) seen.set(c.id, {oid: c.id, t: Date.parse(c.authored_date), msg: c.title || ''});
+        // Match by email; the display name is only a fallback when GitLab shows no email (names are not unique).
+        const mine = emails.size ? emails.has(String(c.author_email || '').toLowerCase()) : !!(me.name && c.author_name === me.name);
+        const t = Date.parse(c.authored_date), key = P.commitKey(t, c.title);
+        if (mine && !seen.has(key)) seen.set(key, {oid: c.id, t, msg: c.title || ''});
       }
       if (list.length < 100) break;
     }
@@ -394,7 +399,7 @@ function renderSetup() {
   $('#repos').innerHTML = repos.length ? repos.map(r => {
     const ov = state.overrides[r.key] || '';
     const eff = ov || r.kind;
-    const opts = [`<option value="">auto: ${SRC[r.kind] ? SRC[r.kind].label : r.kind}</option>`].concat(SOURCES.map(s => `<option value="${s.id}"${ov === s.id ? ' selected' : ''}>${s.label}</option>`)).join('');
+    const opts = [`<option value="">auto: ${esc(SRC[r.kind] ? SRC[r.kind].label : r.kind)}</option>`].concat(SOURCES.map(s => `<option value="${s.id}"${ov === s.id ? ' selected' : ''}>${s.label}</option>`)).join('');
     return `<li class="repo"><span class="ldot" style="--c:var(--src-${SRC[eff] ? eff : 'local'})"></span><span class="rn" title="${esc(r.name)}">${esc(r.name)}</span>${ciCell(r.key)}<span class="rc">${counts[r.key] || 0}c</span><select data-repo="${esc(r.key)}" aria-label="Source for ${esc(r.name)}">${opts}</select></li>`;
   }).join('') : '<li class="hint">None yet. They show up after the first scan.</li>';
   $('#t-top').checked = !!settings.topmost;
@@ -501,7 +506,7 @@ $('#themes').addEventListener('change', e => { if (e.target.name === 'theme') se
 $('#t-top').addEventListener('change', e => post({type:'topmost', on: e.target.checked}));
 $('#t-auto').addEventListener('change', e => post({type:'autostart', on: e.target.checked}));
 $('#b-data').addEventListener('click', () => post({type:'openData'}));
-$('#b-quit').addEventListener('click', () => post({type:'quit'}));
+$('#b-quit').addEventListener('click', quit);
 
 /* ---------- rename ---------- */
 const nameBtn = $('#petname'), nameIn = $('#petnameinput');
@@ -539,6 +544,7 @@ function onHost(m) {
       break;
     case 'notice': if (m.prov) errors[m.prov] = m.text; render(); break;
     case 'rescan': scan(); break;
+    case 'quit': quit(); break;
     case 'api': {
       const f = waiting.get(m.id);
       if (f) { waiting.delete(m.id); let data = null; try { data = m.body ? JSON.parse(m.body) : null; } catch (e) { data = null; } f({status: m.status || 0, data, headers: m.headers || {}, error: m.error}); }
