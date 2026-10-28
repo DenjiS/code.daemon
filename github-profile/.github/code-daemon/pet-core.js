@@ -150,7 +150,7 @@ function derive(list, now, extra) {
   const variety = new Set(week.map(s => s.src)).size;
   const quality = week.filter(s => s.tests || s.bug).length;
   const mood = clamp(Math.round((week.length ? 10 : 0) + streak * 10 + variety * 8 + Math.min(20, quality * 4)), 0, 100);
-  const late = week.filter(s => new Date(s.at).getHours() < 5).length;
+  const late = week.filter(s => isLate(s.at)).length;
   const rest = clamp(100 - 18 * late - 10 * week.filter(s => s.min >= 240).length, 0, 100);
   const pick = o => { let best = null, bv = 0; for (const k in o) if (o[k] > bv) { bv = o[k]; best = k; } return best; };
   const affinity = pick(src30) || pick(srcAll);
@@ -1430,7 +1430,7 @@ ${muts.length ? `<text x="626" y="44" fill="${C.gold}" font-size="10" letter-spa
 }
 
 const PetCore = {
-  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
+  DAY, HOUR, isLate, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, GW, GH,
   clamp, dayIdx, sessionXP, baseXP, mult, valid, mix, derive, gainFor, traitAt, statusLine,
   SESSION_GAP, sessionStart, rescanFrom,
   detectKind, toSessions, ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,

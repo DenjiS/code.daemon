@@ -358,7 +358,7 @@ function renderLog() {
   $('#logempty').hidden = rows.length > 0;
   $('#loglist').innerHTML = rows.map(({s, e}) => {
     if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${D.gain[e.id] || 0}</span><span></span></li>`;
-    const late = new Date(s.at).getHours() < 5;
+    const late = P.isLate(s.at);
     const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).join(' · ');
     const where = s.auto ? esc(s.note) : (s.sample ? 'sample' : 'manual');
     return `<li class="lrow" style="--c:var(--src-${s.src})"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>${SRC[s.src].label}</b> ${s.min}m · ${s.commits}c${flags ? ' · ' + flags : ''}</div><div class="l2" title="${esc(s.note || '')}">${fmtWhen(s.at)} · ${where}</div></div><span class="lxp">+${D.gain[s.id] || 0}</span>${!s.auto ? `<button class="x" type="button" data-del="${esc(s.id)}" title="Delete this session" aria-label="Delete session">×</button>` : '<span></span>'}</li>`;
