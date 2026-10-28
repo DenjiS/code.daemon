@@ -57,7 +57,7 @@ The pet is drawn on a 64 × 48 dot-matrix grid from shaded body parts, so each s
 
 ## Themes
 
-![Classic, Derpy, Demonic and Succubus themes in the widget](docs/themes.png)
+![Classic, Derpy, Slavic, Demonic and Succubus themes in the widget](docs/themes.png)
 
 Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, forms and vitals are the same in every theme; only the look changes.
 
@@ -65,6 +65,7 @@ Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, f
 | --- | --- | --- |
 | Classic | Shaded creatures in your affinity color | slime → crawler → biped → kaiju → runner → wyrm → imp → wyvern → dragon → ascended |
 | Derpy | The Classic line drawn badly on purpose: googly eyes that wander off on their own, buck teeth, tongues out | leggy egg → blep → crab → potato → derpasaur → sausage → noodle → gremlin → long boi → chonk → big eye |
+| Slavic | Characters from Slavic fairy tales in their own colors, with folk ornament, on a night-blue screen | pysanka → kolobok → frog tsarevna → domovoi → leshy → humpbacked horse → poloz → Baba Yaga → firebird → Zmei Gorynych → Koschei |
 | Demonic | Hell-red sprites on a dark red screen | obsidian egg → shadow slime → spider imp → impling → hell kaiju → hellhound → hell serpent → demon → infernal wyvern → archdemon → void lord |
 | Succubus | Succubus line, recolored per affinity (GitHub blue, GitLab orange, Local teal, Unity green, Unreal violet) | heart egg → imp slime → bat imp → chibi imp → chibi succubus → young succubus → lamia → succubus → flying succubus → succubus queen → ascended |
 
@@ -74,11 +75,15 @@ Derpy keeps everything Classic has, including the crests, and adds its own bits:
 
 ![Derpy stages: leggy egg, blep, crab, potato, derpasaur, sausage, noodle, gremlin, long boi, chonk, big eye](docs/derpy.png)
 
+Slavic creatures keep their own colors (a golden kolobok, a green frog, a red-winged firebird); your affinity shows in the crest above the head, as in Classic. Extras: the pysanka cracks as it gets close to hatching, the frog holds Ivan's arrow, Gorynych's side heads take turns breathing fire, Koschei holds up the egg his death is hidden in.
+
+![Slavic stages: pysanka, kolobok, frog tsarevna, domovoi, leshy, humpbacked horse, poloz, Baba Yaga, firebird, Zmei Gorynych, Koschei](docs/slavic.png)
+
 To add a theme, draw an 11 × 4 sheet of 64 × 48 frames (rows = stages, columns = animation frames), convert it to `ui/themes/<id>.js` in the same format, add a `<script>` tag in `widget.html` and an entry in `THEME_LIST` in `pet-core.js`.
 
 ## GitHub profile pet
 
-See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `demonic` or `succubus`.
+See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `slavic`, `demonic` or `succubus`.
 
 ## Data
 

@@ -72,7 +72,7 @@ function save() {
 }
 
 /* ---------- themes ---------- */
-const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', demonic: '#D8322A', succubus: '#FF5C9E'};
+const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', slavic: '#3D6BE0', demonic: '#D8322A', succubus: '#FF5C9E'};
 function applyTheme() {
   const tc = P.themeColors(state.theme), el = $('.screen');
   if (el) { if (tc) { el.style.setProperty('--screen', tc.screen); el.style.setProperty('--screen-dot', tc.dot); } else { el.style.removeProperty('--screen'); el.style.removeProperty('--screen-dot'); } }

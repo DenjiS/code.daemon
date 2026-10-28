@@ -42,7 +42,7 @@ Either way the saved state goes too, and the next run rebuilds the pet from the 
 Edit `.github/workflows/code-daemon.yml`:
 
 - `PET_NAME`: the name on the card.
-- `PET_THEME`: `classic`, `derp`, `demonic` or `succubus`. Same themes as the widget's Setup tab (`derp` is Derpy).
+- `PET_THEME`: `classic`, `derp`, `slavic`, `demonic` or `succubus`. Same themes as the widget's Setup tab (`derp` is Derpy).
 - `TZ`: your time zone. It decides which sessions count as late nights and where days start for streaks.
 - `cron`: how often it redraws. Each run that changes the pet makes one commit by github-actions[bot]; those commits don't count toward your XP.
 
