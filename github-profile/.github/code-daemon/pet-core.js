@@ -1120,7 +1120,7 @@ function build(D, f, opts) {
     const p = e.p || 1, k = Math.max(0, Math.floor(Math.min(rx, ry) - p / 2 - 0.2));
     const x0 = Math.round(ex + dx * k - (p - 1) / 2), y0 = Math.round(ey + dy * k - (p - 1) / 2);
     for (let u = 0; u < p; u++) for (let v = 0; v < p; v++) put(x0 + u, y0 + v, pc);
-    if (form === 'owl') put(x0 + p - 1, y0 + p - 1, C.yellow);
+    if (form === 'owl' && p >= 2) put(x0 + p - 1, y0 + p - 1, C.yellow); // a 1px pupil has no room for the glint
     else if (happy && p >= 2) put(x0, y0, '#FFFFFF');
     if (D.critical) { each((x, y) => { if (y < Math.round(ey)) put(x, y, lid); }); if (i === 0) put(ex - rx + 1, ey + ry + 1, C.drop); }
     else if (tired) for (let x = Math.round(ex - rx + 1); x <= Math.round(ex + rx - 1); x++) put(x, Math.round(ey + ry) + 1, mix(body, screen, 0.45));
@@ -1181,7 +1181,7 @@ function build(D, f, opts) {
       const fill = e.glow && ec === eye ? e.glow : ec;
       for (let k = 0; k < e.w; k++) for (let j = 0; j < e.h; j++) put(e.x + k, e.y + j, fill);
       if (e.slit) for (let j = 0; j < e.h; j++) put(e.x + e.w - 1, e.y + j, eye);
-      if (form === 'owl') put(e.x + e.w - 1, e.y + e.h - 1, C.yellow);
+      if (form === 'owl' && e.w * e.h > 1) put(e.x + e.w - 1, e.y + e.h - 1, C.yellow);
       else if (e.spark) put(e.x + e.w - 1, e.y, e.spark);
       else if (happy && e.w >= 2) put(e.x, e.y, mix(skin, '#ffffff', 0.7));
     }
