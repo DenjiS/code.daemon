@@ -9,7 +9,9 @@ try { ({JSDOM} = require('jsdom')); } catch (e) { /* skipped below */ }
 const UI = path.join(ROOT, 'ui');
 
 function boot(save, repos, now) {
-  const html = fs.readFileSync(path.join(UI, 'widget.html'), 'utf8').replace(/<script[^>]*><\/script>/g, '');
+  const page = fs.readFileSync(path.join(UI, 'widget.html'), 'utf8');
+  const scripts = [...page.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+  const html = page.replace(/<script[^>]*><\/script>/g, '');
   const dom = new JSDOM(html, {runScripts: 'outside-only', pretendToBeVisual: true, url: 'https://daemon.example/widget.html'});
   const w = dom.window;
   const ctx2d = () => new Proxy({}, {get: (t, k) => k in t ? t[k] : () => {}, set: (t, k, v) => (t[k] = v, true)});
@@ -34,7 +36,7 @@ function boot(save, repos, now) {
     ok({repository: {isPrivate: false, object: {entries: []}, releases: {nodes: []}, refs: {nodes: r.ci.map(b => ({name: b.ref,
       target: {committedDate: new Date(now - 30 * MIN).toISOString(), statusCheckRollup: {state: b.s}, history: {pageInfo: {hasNextPage: false}, nodes}}}))}}});
   }}};
-  for (const f of ['pet-core.js', 'themes/demonic.js', 'themes/succubus.js', 'widget.js']) w.eval(fs.readFileSync(path.join(UI, f), 'utf8'));
+  for (const f of scripts) w.eval(fs.readFileSync(path.join(UI, f), 'utf8'));
   return {w, host, tell: m => host.listener({data: m})};
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -79,5 +81,59 @@ test('quit writes a pending rename before the quit message, and never writes an 
   const q = host.posted.findIndex(m => m && m.type === 'quit');
   assert.ok(i >= 0 && q > i, 'SAVE comes before quit');
   assert.strictEqual(JSON.parse(host.posted[i].slice(5)).name, 'nyx');
+  } finally { w.close(); }
+});
+
+test('the wiki builds every section from the engine, and a vital opens its own section', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  const now = Date.now();
+  const save = {v: 2, name: 'dmn', manual: [], repos: [], ci: {}, events: [], lastScan: {gh: now, gl: 0}, overrides: {},
+    auto: toS('me/app', Array.from({length: 12}, (_, i) => ({oid: 'w' + i, t: now - i * 26 * HOUR})))};
+  const {w} = boot(save, {}, now);
+  try {
+    await wait(800);
+    const $ = s => w.document.querySelector(s), $$ = s => [...w.document.querySelectorAll(s)];
+    $('#b-wiki').click();
+    assert.strictEqual($('#tab-wiki').hidden, false);
+    const secs = $$('#tab-wiki details.wk');
+    assert.strictEqual(secs.length, w.PetWiki.SECTIONS.length);
+    assert.ok(!$('#tab-wiki').textContent.includes('could not be built'));
+    for (const s of P.STAGES) assert.ok($('#wk-stages').textContent.includes(s.xp.toLocaleString('en-US')), s.name);
+    $('[data-wiki="rest"]').click();
+    assert.ok($('#wk-rest').open, 'Rest section opened');
+    assert.strictEqual($('#tab-wiki').hidden, false);
+  } finally { w.close(); }
+});
+
+test('switching the interface language translates the page, the tray menu and the wiki; the wiki can keep its own', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  const now = Date.now();
+  const save = {v: 2, name: 'dmn', manual: [], repos: [], ci: {}, events: [], lastScan: {gh: now, gl: 0}, overrides: {},
+    auto: toS('me/app', Array.from({length: 12}, (_, i) => ({oid: 'l' + i, t: now - i * 26 * HOUR})))};
+  const {w, host} = boot(save, {}, now);
+  try {
+    await wait(800);
+    const $ = s => w.document.querySelector(s);
+    $('#b-more').click(); $('[data-tab=setup]').click();
+    const pick = (sel, v) => { const el = $(sel); el.value = v; el.dispatchEvent(new w.Event('change', {bubbles: true})); };
+    pick('#lang-ui', 'ru');
+    assert.strictEqual(w.document.documentElement.lang, 'ru');
+    assert.strictEqual($('[data-tab=feed]').textContent, 'Корм');
+    assert.ok($('#vitals').textContent.includes('ЭНЕРГИЯ'));
+    const menu = host.posted.filter(m => m && m.type === 'menu').at(-1);
+    assert.strictEqual(menu.items.quit, 'Выйти');
+    $('#b-wiki').click();
+    assert.ok($('#wk-how summary').textContent.startsWith('Как это работает'));
+    $('[data-tab=setup]').click();
+    pick('#lang-wiki', 'ja');
+    $('[data-tab=wiki]').click();
+    assert.ok($('#wk-how summary').textContent.startsWith('しくみ'));
+    assert.strictEqual($('[data-tab=wiki]').textContent, 'Вики');
+    await wait(400);
+    const saved = host.saves.at(-1);
+    assert.strictEqual(saved.lang, 'ru'); assert.strictEqual(saved.wikiLang, 'ja');
+    $('[data-tab=setup]').click();
+    pick('#lang-ui', 'en');
+    assert.strictEqual($('[data-tab=feed]').textContent, 'Feed');
+    assert.ok($('#setup-gh-hint, [data-i18n-html="setup.ghHint"]').innerHTML.startsWith('Safest:'));
+    assert.ok($('#gh-clear'), 'the Disconnect button survives the switch');
   } finally { w.close(); }
 });

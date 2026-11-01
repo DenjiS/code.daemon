@@ -3,6 +3,7 @@
 'use strict';
 const P = window.PetCore;
 const {DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, clamp, valid} = P;
+const I = window.I18n;
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -10,15 +11,15 @@ const wv = window.chrome && window.chrome.webview ? window.chrome.webview : null
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2, '0');
-const monthFmt = new Intl.DateTimeFormat('en', {month:'short', day:'numeric'});
+let monthFmt = new Intl.DateTimeFormat('en', {month:'short', day:'numeric'});
 const fmtWhen = ms => { const d = new Date(ms); return `${monthFmt.format(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const ago = ms => { const m = Math.max(0, Math.round((Date.now() - ms) / 6e4)); if (m < 1) return 'now'; if (m < 60) return m + 'm'; const h = Math.floor(m / 60); if (h < 24) return h + 'h'; return Math.floor(h / 24) + 'd'; };
+const since = ms => { const m = Math.max(0, Math.round((Date.now() - ms) / 6e4)); if (m < 1) return t('time.now'); if (m < 60) return t('time.m', {n: m}); const h = Math.floor(m / 60); if (h < 24) return t('time.h', {n: h}); return t('time.d', {n: Math.floor(h / 24)}); };
 const newId = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const repoName = k => String(k || '').replace(/^g[hl]:/, '');
 const repoLabel = k => { const r = state.repos.find(x => x.key === k); return r ? r.name : repoName(k); };
 
 /* ---------- state ---------- */
-const freshState = () => ({v:2, name:'dmn', theme:'classic', manual:[], auto:[], repos:[], ci:{}, events:[], lastScan:{gh:0, gl:0}, accounts:{gh:null, gl:null}, overrides:{}});
+const freshState = () => ({v:2, name:'dmn', theme:'classic', lang:'auto', wikiLang:'ui', manual:[], auto:[], repos:[], ci:{}, events:[], lastScan:{gh:0, gl:0}, accounts:{gh:null, gl:null}, overrides:{}});
 function normSession(b) {
   b = b || {};
   return {
@@ -37,6 +38,8 @@ function loadState(text) {
   const arr = x => Array.isArray(x) ? x : [];
   if (typeof o.name === 'string' && o.name.trim()) s.name = o.name.trim().slice(0, 16);
   if (typeof o.theme === 'string' && P.hasTheme(o.theme)) s.theme = o.theme;
+  if (typeof o.lang === 'string' && (o.lang === 'auto' || I.has(o.lang))) s.lang = o.lang;
+  if (typeof o.wikiLang === 'string' && (o.wikiLang === 'ui' || I.has(o.wikiLang))) s.wikiLang = o.wikiLang;
   s.manual = arr(o.manual).map(normSession).filter(valid);
   s.auto = arr(o.auto).map(normSession).filter(valid);
   s.repos = arr(o.repos).filter(r => r && r.key).map(r => ({key:String(r.key), name:String(r.name || r.key), prov:r.prov === 'gl' ? 'gl' : 'gh', kind:String(r.kind || ''), last:+r.last || 0}));
@@ -74,8 +77,43 @@ function save() { dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(
 // Quit writes any pending change first; the host waits for the 'quit' message that follows it.
 function quit() { commitName(true); flushSave(); post({type:'quit'}); }
 
+/* ---------- language ----------
+   The interface and the wiki each have a language, saved with the pet. 'auto' follows Windows; the wiki can follow the interface.
+   Static text in widget.html carries data-i18n* attributes; its English is read from the page itself at start-up. */
+const sysLang = I.detect(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+let lang = 'en', wikiLang = 'en';
+const t = (k, v) => I.t(lang, k, v);
+const N = () => I.names(lang);
+const I18N_ATTRS = [['data-i18n', ''], ['data-i18n-html', 'html'], ['data-i18n-title', 'title'], ['data-i18n-ph', 'placeholder'], ['data-i18n-aria', 'aria-label']];
+for (const [a, how] of I18N_ATTRS) for (const el of $$(`[${a}]`)) {
+  const k = el.getAttribute(a);
+  if (!(I.DICT.en && Object.prototype.hasOwnProperty.call(I.DICT.en, k))) I.add('en', {[k]: how === 'html' ? el.innerHTML.trim() : how ? el.getAttribute(how) : el.textContent});
+}
+// A scan or host error: a dictionary key with values, or plain text that came from elsewhere.
+const errText = e => e && typeof e === 'object' && e.key ? t(e.key, e.vars) : String(e || '');
+function applyLang() {
+  lang = state.lang !== 'auto' && I.has(state.lang) ? state.lang : sysLang;
+  wikiLang = state.wikiLang !== 'ui' && I.has(state.wikiLang) ? state.wikiLang : lang;
+  document.documentElement.lang = I.tag(lang);
+  for (const [a, how] of I18N_ATTRS) for (const el of $$(`[${a}]`)) {
+    const v = t(el.getAttribute(a));
+    if (how === 'html') { if (el.innerHTML !== v) el.innerHTML = v; } else if (how) el.setAttribute(how, v); else if (el.textContent !== v) el.textContent = v;
+  }
+  monthFmt = new Intl.DateTimeFormat(I.tag(lang), {month: 'short', day: 'numeric'});
+  renderSrcs();
+  post({type: 'menu', items: {show: t('tray.show'), rescan: t('tray.rescan'), data: t('tray.data'), quit: t('tray.quit')}});
+}
+const setHTML = (el, html) => { if (el._html !== html) { el._html = html; el.innerHTML = html; } };
+function renderLangs() {
+  const opt = (v, label, on) => `<option value="${v}"${on ? ' selected' : ''}>${esc(label)}</option>`;
+  const sys = I.LANGS.find(l => l.id === sysLang) || I.LANGS[0];
+  setHTML($('#lang-ui'), opt('auto', t('lang.auto', {name: sys.name}), state.lang === 'auto') + I.LANGS.map(l => opt(l.id, l.name, state.lang === l.id)).join(''));
+  setHTML($('#lang-wiki'), opt('ui', t('lang.same'), state.wikiLang === 'ui') + I.LANGS.map(l => opt(l.id, l.name, state.wikiLang === l.id)).join(''));
+  $('#lang-ui').value = state.lang; $('#lang-wiki').value = state.wikiLang;
+}
+
 /* ---------- themes ---------- */
-const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', slavic: '#3D6BE0', demonic: '#D8322A', succubus: '#FF5C9E'};
+const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', slavic: '#3D6BE0', asian: '#3FB28A', demonic: '#D8322A', succubus: '#FF5C9E'};
 function applyTheme() {
   const tc = P.themeColors(state.theme), el = $('.screen');
   if (el) { if (tc) { el.style.setProperty('--screen', tc.screen); el.style.setProperty('--screen-dot', tc.dot); } else { el.style.removeProperty('--screen'); el.style.removeProperty('--screen-dot'); } }
@@ -83,7 +121,7 @@ function applyTheme() {
 function renderThemes() {
   const box = $('#themes'); if (!box) return;
   box.innerHTML = P.THEME_LIST.filter(t => P.hasTheme(t.id)).map(t =>
-    `<label class="chip" style="--c:${THEME_DOT[t.id] || 'var(--muted)'}"><input type="radio" name="theme" value="${t.id}"${state.theme === t.id ? ' checked' : ''}><span>${esc(t.name)}</span></label>`).join('');
+    `<label class="chip" style="--c:${THEME_DOT[t.id] || 'var(--muted)'}"><input type="radio" name="theme" value="${t.id}"${state.theme === t.id ? ' checked' : ''}><span>${esc(N().theme(t.id))}</span></label>`).join('');
 }
 function setTheme(id) {
   if (!P.hasTheme(id) || id === state.theme) return;
@@ -140,20 +178,20 @@ function fx(el, text) {
 }
 function evolve(st) {
   flash = 12;
-  const form = st >= FORM_STAGE && D.form ? ' · ' + FORMS[D.form].name.toUpperCase() : '';
-  setTimeout(() => fx($('#evofx'), `→ ${STAGES[st].name}${form}`), 600);
+  const n = N(), form = st >= FORM_STAGE && D.form ? ' · ' + n.upper(n.form(D.form)) : '';
+  setTimeout(() => fx($('#evofx'), `→ ${n.stage(st)}${form}`), 600);
 }
 
 /* ---------- API (the host adds the token) ---------- */
 const waiting = new Map();
 let seq = 0;
-class ScanError extends Error {}
+class ScanError extends Error { constructor(key, vars) { super(I.t('en', key, vars)); this.key = key; this.vars = vars; } }
 const FATAL = /token|rate limit|unreachable|did not answer/i;
 function api(prov, path, opts = {}) {
-  if (!wv) return Promise.reject(new ScanError('Preview mode has no API access.'));
+  if (!wv) return Promise.reject(new ScanError('err.preview'));
   const id = ++seq;
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => { waiting.delete(id); reject(new ScanError('The API did not answer in 60 s.')); }, 60000);
+    const t = setTimeout(() => { waiting.delete(id); reject(new ScanError('err.timeout')); }, 60000);
     waiting.set(id, r => { clearTimeout(t); resolve(r); });
     post({type:'api', id, prov, method: opts.method || 'GET', path, body: opts.body ? JSON.stringify(opts.body) : null});
   });
@@ -165,21 +203,21 @@ async function eachLimit(items, n, fn) {
 async function gql(query, variables) {
   const r = await api('gh', '/graphql', {method:'POST', body:{query, variables}});
   if (r.headers && r.headers['X-RateLimit-Remaining']) rate.gh = +r.headers['X-RateLimit-Remaining'];
-  if (r.status === 401) throw new ScanError('GitHub rejected the token. Paste a new one.');
-  if (r.status === 403 || r.status === 429) throw new ScanError('GitHub rate limit hit. The next scan retries.');
-  if (r.status === 0) throw new ScanError(r.error || 'GitHub is unreachable.');
-  if (r.status >= 400 || !r.data) throw new ScanError(`GitHub answered ${r.status}.`);
-  if (!r.data.data) throw new ScanError((r.data.errors && r.data.errors[0] && r.data.errors[0].message) || 'GitHub query failed.');
+  if (r.status === 401) throw new ScanError('err.ghToken');
+  if (r.status === 403 || r.status === 429) throw new ScanError('err.ghRate');
+  if (r.status === 0) throw (r.error ? new ScanError('err.raw', {msg: r.error}) : new ScanError('err.ghDown'));
+  if (r.status >= 400 || !r.data) throw new ScanError('err.ghStatus', {n: r.status});
+  if (!r.data.data) { const msg = r.data.errors && r.data.errors[0] && r.data.errors[0].message; throw msg ? new ScanError('err.raw', {msg}) : new ScanError('err.ghQuery'); }
   return r.data.data;
 }
 async function gl(path, soft) {
   const r = await api('gl', path);
   if (r.headers && r.headers['RateLimit-Remaining']) rate.gl = +r.headers['RateLimit-Remaining'];
-  if (r.status === 401) throw new ScanError('GitLab rejected the token. Paste a new one.');
-  if (r.status === 0) throw new ScanError(r.error || 'GitLab is unreachable. Check the address.');
-  if (r.status === 429) throw new ScanError('GitLab rate limit hit. The next scan retries.');
-  if (r.status === 403 && !soft) throw new ScanError('The GitLab token needs read_api and read_user.');
-  if (r.status >= 400) { if (soft) return null; throw new ScanError(`GitLab answered ${r.status}.`); }
+  if (r.status === 401) throw new ScanError('err.glToken');
+  if (r.status === 0) throw (r.error ? new ScanError('err.raw', {msg: r.error}) : new ScanError('err.glDown'));
+  if (r.status === 429) throw new ScanError('err.glRate');
+  if (r.status === 403 && !soft) throw new ScanError('err.glScope');
+  if (r.status >= 400) { if (soft) return null; throw new ScanError('err.glStatus', {n: r.status}); }
   return r.data;
 }
 
@@ -223,7 +261,7 @@ async function glPipeline(projectId, username) {
 async function scanGitLab(since, now) {
   const iso = encodeURIComponent(new Date(since).toISOString());
   const me = await gl('/api/v4/user');
-  if (!me || !me.id) throw new ScanError('GitLab did not return your profile.');
+  if (!me || !me.id) throw new ScanError('err.glProfile');
   const emails = new Set([me.email, me.commit_email, me.public_email].filter(Boolean).map(s => String(s).toLowerCase()));
   const extra = await gl('/api/v4/user/emails', true);
   if (Array.isArray(extra)) extra.forEach(e => e && e.email && emails.add(String(e.email).toLowerCase()));
@@ -290,58 +328,67 @@ async function scan(opts = {}) {
       fixed += fresh.length;
       state.accounts[p] = r.account; state.lastScan[p] = now; errors[p] = null;
     } catch (e) {
-      errors[p] = e && e.message ? e.message : String(e);
+      errors[p] = e && e.key ? {key: e.key, vars: e.vars} : (e && e.message ? e.message : String(e));
     }
   }
   scanning = false;
   save(); render();
   if (D.xp > beforeXP) fx($('#xpfx'), `+${D.xp - beforeXP} XP`);
   if (D.stage > beforeStage) evolve(D.stage);
-  else if (fixed) setTimeout(() => fx($('#evofx'), fixed > 1 ? `${fixed} BUILDS FIXED` : 'BUILD FIXED'), 600);
+  else if (fixed) setTimeout(() => fx($('#evofx'), fixed > 1 ? t('fx.fixedN', {n: fixed}) : t('fx.fixed')), 600);
 }
 
 /* ---------- render ---------- */
 const lv = v => v >= 60 ? 'ok' : v >= 30 ? 'mid' : 'low';
 function syncLine() {
-  if (!wv) return {text: 'preview · sample data', err: false};
-  if (!ready) return {text: 'connecting…', err: false};
-  if (scanning) return {text: 'syncing GitHub / GitLab…', err: false};
+  if (!wv) return {text: t('sync.preview'), err: false};
+  if (!ready) return {text: t('sync.connecting'), err: false};
+  if (scanning) return {text: t('sync.syncing'), err: false};
   const errP = ['gh', 'gl'].find(p => errors[p]);
-  if (errP) return {text: `${errP === 'gh' ? 'GitHub' : 'GitLab'}: ${errors[errP]}`, err: true};
+  if (errP) return {text: t('sync.err', {name: errP === 'gh' ? 'GitHub' : 'GitLab', err: errText(errors[errP])}), err: true};
   const parts = [];
-  if (settings.gh.connected) parts.push(`GitHub ${state.lastScan.gh ? ago(state.lastScan.gh) + ' ago' : 'pending'}`);
-  if (settings.gl.connected) parts.push(`GitLab ${state.lastScan.gl ? ago(state.lastScan.gl) + ' ago' : 'pending'}`);
-  return {text: parts.length ? 'synced · ' + parts.join(' · ') : 'no account · open Setup', err: false};
+  for (const [p, name] of [['gh', 'GitHub'], ['gl', 'GitLab']]) if (settings[p].connected)
+    parts.push(state.lastScan[p] ? t('sync.when', {name, when: since(state.lastScan[p])}) : t('sync.pending', {name}));
+  return {text: parts.length ? t('sync.synced', {list: parts.join(' · ')}) : t('sync.none'), err: false};
+}
+// The status line on the screen, in the interface language (pet-core decides what it says).
+function statusText() {
+  const [k, v] = P.statusInfo(D), n = N();
+  if (k === 'empty') return t(settings.gh.connected || settings.gl.connected ? 'hud.eggWait' : 'hud.eggConnect');
+  if (k === 'sick') return t(v.more ? 'st.sickMore' : 'st.sick', {repo: repoLabel(v.repo), more: v.more});
+  if (k === 'next' || k === 'max') return t('st.' + k, {n: v.n, stage: n.lower(n.stage(v.stage)), STAGE: n.stage(v.stage)});
+  return t('st.' + k, v);
 }
 function render() {
   D = deriveNow();
   applyTheme();
-  const st = D.stage, aff = D.affinity, has = D.count > 0;
+  const st = D.stage, aff = D.affinity, has = D.count > 0, n = N();
   document.documentElement.style.setProperty('--aff', aff ? `var(--src-${aff})` : 'var(--muted)');
   $('#petname').textContent = state.name || 'dmn';
-  $('#pill').textContent = `${STAGES[st].name} ${st}/${MAX_STAGE}`;
-  const muts = Object.keys(D.mutations).filter(k => D.mutations[k]).map(k => MUTATIONS[k].name.toUpperCase());
-  const bodyName = esc(P.stageBody(st, state.theme).toLowerCase());
-  const formTxt = st >= FORM_STAGE ? `<b>${esc(FORMS[D.form || 'core'].name)}</b> ${bodyName}` : `${bodyName} · form locks at ${STAGES[FORM_STAGE].name} (${STAGES[FORM_STAGE].xp - D.xp} XP)`;
-  const affTxt = aff && st >= CREST_STAGE ? ` · ${SRC[aff].label} crest` : '';
-  $('#formrow').innerHTML = formTxt + affTxt + (muts.length ? ` · <span class="mut">${muts.join(' · ')}</span>` : '');
-  $('#formrow').title = st >= FORM_STAGE ? FORMS[D.form || 'core'].rule : `From ${STAGES[FORM_STAGE].name} on, every evolution locks a form from your last 30 days of habits.`;
+  $('#pill').textContent = `${n.stage(st)} ${st}/${MAX_STAGE}`;
+  const muts = Object.keys(D.mutations).filter(k => D.mutations[k]).map(k => n.upper(n.mut(k)));
+  const body = n.bodyLower(st, state.theme), form = D.form || 'core';
+  const formTxt = st >= FORM_STAGE ? t('pet.form', {form: esc(n.form(form)), body: esc(body)})
+    : esc(t('pet.locks', {body, stage: n.stage(FORM_STAGE), n: STAGES[FORM_STAGE].xp - D.xp}));
+  const affTxt = aff && st >= CREST_STAGE ? ' · ' + esc(t('pet.crest', {src: n.src(aff)})) : '';
+  $('#formrow').innerHTML = formTxt + affTxt + (muts.length ? ` · <span class="mut">${esc(muts.join(' · '))}</span>` : '');
+  $('#formrow').title = st >= FORM_STAGE ? n.formRule(form) : t('pet.locksTip', {stage: n.stage(FORM_STAGE)});
   const next = STAGES[st + 1];
   const fill = next ? clamp((D.xp - STAGES[st].xp) / (next.xp - STAGES[st].xp) * 100, 0, 100) : 100;
   $('#xpfill').style.width = fill.toFixed(1) + '%';
-  $('#xpcap').textContent = next ? `${D.xp} / ${next.xp} XP` : `${D.xp} XP · max`;
-  const vit = [['Energy', D.energy, has], ['Mood', D.mood, has], ['Rest', D.rest, has], ['Build', D.health, D.ciTracked > 0]];
-  $('#vitals').innerHTML = vit.map(([t, v, show]) => {
-    const tip = t === 'Build' ? (show ? `${D.ciPassing}/${D.ciTracked} recent repos green` : 'No CI results from repos you touched in the last 14 days') : t;
-    return `<div class="vital" data-lv="${show ? lv(v) : 'ok'}" title="${esc(tip)}"><div class="top"><span>${t.toUpperCase()}</span><b>${show ? v : '—'}</b></div><div class="track"><i style="width:${show ? v : 0}%"></i></div></div>`;
+  $('#xpcap').textContent = next ? t('pet.xp', {xp: D.xp, next: next.xp}) : t('pet.xpMax', {xp: D.xp});
+  const vit = [['energy', D.energy, has], ['mood', D.mood, has], ['rest', D.rest, has], ['build', D.health, D.ciTracked > 0]];
+  $('#vitals').innerHTML = vit.map(([k, v, show]) => {
+    const label = t('vital.' + k);
+    const tip = k === 'build' ? (show ? t('vital.buildTip', {p: D.ciPassing, n: D.ciTracked}) : t('vital.buildNone')) : label;
+    return `<div class="vital" data-wiki="${k}" data-lv="${show ? lv(v) : 'ok'}" title="${esc(tip)}"><div class="top"><span>${esc(n.upper(label))}</span><b>${show ? v : '—'}</b></div><div class="track"><i style="width:${show ? v : 0}%"></i></div></div>`;
   }).join('');
-  $('#hudstage').textContent = `${STAGES[st].name} · ${st}/${MAX_STAGE}`;
-  $('#hudup').textContent = has ? `streak ${D.streak}d` : 'no signal';
-  $('#hudstatus').textContent = !ready ? '> booting daemon…'
-    : P.statusLine(D, {label: repoLabel, empty: settings.gh.connected || settings.gl.connected ? '> egg found. waiting for commits' : '> egg found. connect an account'});
+  $('#hudstage').textContent = `${n.stage(st)} · ${st}/${MAX_STAGE}`;
+  $('#hudup').textContent = has ? t('hud.streak', {n: D.streak}) : t('hud.nosignal');
+  $('#hudstatus').textContent = !ready ? t('hud.boot') : statusText();
   canvas.setAttribute('aria-label', has
-    ? `${state.name}, ${STAGES[st].name}${st >= FORM_STAGE ? ' ' + FORMS[D.form || 'core'].name : ''}. Energy ${D.energy}, mood ${D.mood}, rest ${D.rest}${D.ciTracked ? ', build ' + D.health : ''}.`
-    : `${state.name} is still an egg.`);
+    ? t(D.ciTracked ? 'aria.petBuild' : 'aria.pet', {name: state.name, what: n.stage(st) + (st >= FORM_STAGE ? ' ' + n.form(form) : ''), e: D.energy, m: D.mood, r: D.rest, h: D.health})
+    : t('aria.egg', {name: state.name}));
   const sl = syncLine();
   const sync = $('#sync'); sync.textContent = sl.text; sync.className = sl.err ? 'err' : ''; sync.title = sl.text;
   $('#b-scan').classList.toggle('spin', scanning);
@@ -351,57 +398,68 @@ function render() {
 }
 function renderPanel() {
   $$('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  $('#tab-feed').hidden = tab !== 'feed'; $('#tab-log').hidden = tab !== 'log'; $('#tab-setup').hidden = tab !== 'setup';
+  $('#tab-feed').hidden = tab !== 'feed'; $('#tab-log').hidden = tab !== 'log'; $('#tab-setup').hidden = tab !== 'setup'; $('#tab-wiki').hidden = tab !== 'wiki';
   if (tab === 'feed') updatePreview();
+  if (tab === 'wiki') renderWiki();
   if (tab === 'log') renderLog();
   if (tab === 'setup') renderSetup();
 }
 function renderLog() {
-  const locked = STAGES.map((x, k) => k).filter(k => k >= FORM_STAGE && D.forms[k]).map(k => `${STAGES[k].name} → <b>${esc(FORMS[D.forms[k]].name)}</b>`);
-  $('#evo').innerHTML = locked.length ? 'Evolution: ' + locked.join(' · ') : `Next form locks at ${STAGES[FORM_STAGE].name}. Right now your habits point to <b>${esc(FORMS[P.traitAt(D.sorted, Date.now())].name)}</b>.`;
+  const n = N();
+  const locked = STAGES.map((x, k) => k).filter(k => k >= FORM_STAGE && D.forms[k]).map(k => `${esc(n.stage(k))} → <b>${esc(n.form(D.forms[k]))}</b>`);
+  $('#evo').innerHTML = locked.length ? t('log.evo', {list: locked.join(' · ')})
+    : t('log.next', {stage: esc(n.stage(FORM_STAGE)), form: esc(n.form(P.traitAt(D.sorted, Date.now())))});
   const rows = D.sorted.map(s => ({t: s.at, s})).concat(state.events.map(e => ({t: e.at, e}))).sort((a, b) => b.t - a.t).slice(0, 40);
   $('#logempty').hidden = rows.length > 0;
+  const del = esc(t('log.del'));
   $('#loglist').innerHTML = rows.map(({s, e}) => {
-    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>Build fixed</b> · CI back to green</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${D.gain[e.id] || 0}</span><span></span></li>`;
+    if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1">${t('log.fixed')}</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${D.gain[e.id] || 0}</span><span></span></li>`;
     const late = P.isLate(s.at);
-    const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).join(' · ');
-    const where = s.auto ? esc(s.note) : (s.sample ? 'sample' : 'manual');
-    return `<li class="lrow" style="--c:var(--src-${s.src})"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>${SRC[s.src].label}</b> ${s.min}m · ${s.commits}c${flags ? ' · ' + flags : ''}</div><div class="l2" title="${esc(s.note || '')}">${fmtWhen(s.at)} · ${where}</div></div><span class="lxp">+${D.gain[s.id] || 0}</span>${!s.auto ? `<button class="x" type="button" data-del="${esc(s.id)}" title="Delete this session" aria-label="Delete session">×</button>` : '<span></span>'}</li>`;
+    const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).map(f => t('flag.' + f)).join(' · ');
+    const where = s.auto ? esc(s.note) : esc(t(s.sample ? 'log.sample' : 'log.manual'));
+    return `<li class="lrow" style="--c:var(--src-${s.src})"><span class="ldot"></span><div style="min-width:0"><div class="l1"><b>${esc(n.src(s.src))}</b> ${esc(t('log.size', {min: s.min, c: s.commits}))}${flags ? ' · ' + esc(flags) : ''}</div><div class="l2" title="${esc(s.note || '')}">${fmtWhen(s.at)} · ${where}</div></div><span class="lxp">+${D.gain[s.id] || 0}</span>${!s.auto ? `<button class="x" type="button" data-del="${esc(s.id)}" title="${del}" aria-label="${del}">×</button>` : '<span></span>'}</li>`;
   }).join('');
-  $('#rules').innerHTML = Object.keys(FORMS).map(k => `<li><b>${FORMS[k].name}</b>: ${esc(FORMS[k].rule)}</li>`).join('')
-    + Object.keys(MUTATIONS).map(k => `<li><b>${MUTATIONS[k].name}</b> (rare): ${esc(MUTATIONS[k].rule)}</li>`).join('')
-    + `<li><b>Sick</b>: a red CI run in a repo you touched in the last 14 days. Turning the same branch green earns +${P.FIX_XP} XP, once a day per repo.</li>`;
+}
+function renderWiki() {
+  if (window.PetWiki) window.PetWiki.render($('#tab-wiki'), {D, now: Date.now(), theme: state.theme, ci: state.ci, label: repoLabel, lang: wikiLang});
+}
+// Opens the Wiki tab, optionally at one section.
+function openWiki(section) {
+  if (section && window.PetWiki) window.PetWiki.show(section);
+  if (expanded && tab === 'wiki') renderPanel(); else setExpanded(true, 'wiki');
 }
 function renderSetup() {
   $('#previewnote').hidden = !!wv;
+  renderLangs();
   renderThemes();
+  const n = N();
   for (const p of ['gh', 'gl']) {
     const el = $(`#${p}-state`), on = settings[p].connected;
     el.className = 'astate' + (errors[p] ? ' err' : on && state.accounts[p] ? ' ok' : '');
-    el.textContent = errors[p] ? errors[p] : on ? (state.accounts[p] ? `connected ${state.accounts[p]}` : 'connected · scanning') : 'not connected';
+    el.textContent = errors[p] ? errText(errors[p]) : on ? (state.accounts[p] ? t('acct.on', {who: state.accounts[p]}) : t('acct.scanning')) : t('acct.none');
     $(`#${p}-clearwrap`).hidden = !on;
-    $(`#${p}-save`).textContent = on ? 'Replace' : 'Connect';
+    $(`#${p}-save`).textContent = t(on ? 'acct.replace' : 'acct.connect');
   }
   const urlEl = $('#gl-url');
   if (document.activeElement !== urlEl) urlEl.value = settings.gl.url || 'https://gitlab.com';
   const base = (urlEl.value || 'https://gitlab.com').replace(/\/+$/, '');
   if (/^https?:\/\/[^\s/]+/.test(base)) $('#gl-link').href = `${base}/-/user_settings/personal_access_tokens?name=code.daemon&scopes=read_api,read_user`;
   const info = [];
-  if (state.lastScan.gh) info.push(`GitHub ${ago(state.lastScan.gh)} ago${rate.gh != null ? `, ${rate.gh} calls left` : ''}`);
-  if (state.lastScan.gl) info.push(`GitLab ${ago(state.lastScan.gl)} ago`);
-  $('#scaninfo').textContent = scanning ? 'Scanning… the first scan reads 180 days and can take a minute.' : info.length ? 'Last scan: ' + info.join(' · ') + '. Rescans every 15 min.' : 'Scans run on start and every 15 min.';
+  if (state.lastScan.gh) info.push(rate.gh != null ? t('scan.calls', {name: 'GitHub', when: since(state.lastScan.gh), n: rate.gh}) : t('sync.when', {name: 'GitHub', when: since(state.lastScan.gh)}));
+  if (state.lastScan.gl) info.push(t('sync.when', {name: 'GitLab', when: since(state.lastScan.gl)}));
+  $('#scaninfo').textContent = scanning ? t('scan.busy') : info.length ? t('scan.last', {list: info.join(' · ')}) : t('scan.idle');
   $('#scan2').disabled = $('#scanfull').disabled = scanning || !wv;
   const counts = {};
   for (const s of state.auto) counts[s.repo] = (counts[s.repo] || 0) + s.commits;
   const repos = state.repos.slice().sort((a, b) => b.last - a.last);
   $('#repocount').textContent = repos.length ? String(repos.length) : '';
-  const ciCell = k => { const c = state.ci[k]; if (!c) return '<span class="ci none" title="No CI found">—</span>'; const t = {pass: ['✓', 'Latest CI run passed'], fail: ['✗', 'Latest CI run failed'], run: ['…', 'CI is running']}[c.s]; return `<span class="ci ${c.s}" title="${t[1]}">${t[0]}</span>`; };
+  const ciCell = k => { const c = state.ci[k]; if (!c) return `<span class="ci none" title="${esc(t('ci.none'))}">—</span>`; return `<span class="ci ${c.s}" title="${esc(t('ci.' + c.s))}">${{pass: '✓', fail: '✗', run: '…'}[c.s]}</span>`; };
   $('#repos').innerHTML = repos.length ? repos.map(r => {
     const ov = state.overrides[r.key] || '';
     const eff = ov || r.kind;
-    const opts = [`<option value="">auto: ${esc(SRC[r.kind] ? SRC[r.kind].label : r.kind)}</option>`].concat(SOURCES.map(s => `<option value="${s.id}"${ov === s.id ? ' selected' : ''}>${s.label}</option>`)).join('');
-    return `<li class="repo"><span class="ldot" style="--c:var(--src-${SRC[eff] ? eff : 'local'})"></span><span class="rn" title="${esc(r.name)}">${esc(r.name)}</span>${ciCell(r.key)}<span class="rc">${counts[r.key] || 0}c</span><select data-repo="${esc(r.key)}" aria-label="Source for ${esc(r.name)}">${opts}</select></li>`;
-  }).join('') : '<li class="hint">None yet. They show up after the first scan.</li>';
+    const opts = [`<option value="">${esc(t('repo.auto', {src: SRC[r.kind] ? n.src(r.kind) : r.kind}))}</option>`].concat(SOURCES.map(s => `<option value="${s.id}"${ov === s.id ? ' selected' : ''}>${esc(n.src(s.id))}</option>`)).join('');
+    return `<li class="repo"><span class="ldot" style="--c:var(--src-${SRC[eff] ? eff : 'local'})"></span><span class="rn" title="${esc(r.name)}">${esc(r.name)}</span>${ciCell(r.key)}<span class="rc">${counts[r.key] || 0}c</span><select data-repo="${esc(r.key)}" aria-label="${esc(t('repo.aria', {name: r.name}))}">${opts}</select></li>`;
+  }).join('') : `<li class="hint">${esc(t('repos.none'))}</li>`;
   $('#t-top').checked = !!settings.topmost;
   $('#t-auto').checked = !!settings.autostart;
 }
@@ -422,6 +480,9 @@ function setExpanded(on, which) {
   requestAnimationFrame(fit);
 }
 $('#b-more').addEventListener('click', () => setExpanded(!expanded));
+$('#b-wiki').addEventListener('click', () => { if (expanded && tab === 'wiki') setExpanded(false); else openWiki(); });
+// Vitals and other "how does this work" links jump to their wiki section.
+$('#app').addEventListener('click', e => { const t = e.target.closest('[data-wiki]'); if (t) openWiki(t.dataset.wiki); });
 $('#b-hide').addEventListener('click', () => post({type:'hide'}));
 $$('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; renderPanel(); }));
 function startDrag(e) {
@@ -432,12 +493,15 @@ $('#bar').addEventListener('mousedown', startDrag);
 $('#screen').addEventListener('mousedown', startDrag);
 
 /* ---------- feed ---------- */
-$('#srcs').innerHTML = SOURCES.map(s => `<label class="chip" style="--c:var(--src-${s.id})"><input type="radio" name="src" value="${s.id}"${s.id === 'local' ? ' checked' : ''}><span>${s.label}</span></label>`).join('');
+function renderSrcs() {
+  const cur = (document.querySelector('input[name="src"]:checked') || {}).value || 'local', n = N();
+  $('#srcs').innerHTML = SOURCES.map(s => `<label class="chip" style="--c:var(--src-${s.id})"><input type="radio" name="src" value="${s.id}"${s.id === cur ? ' checked' : ''}><span>${esc(n.src(s.id))}</span></label>`).join('');
+}
 function readDraft() {
   const r = document.querySelector('input[name="src"]:checked');
   const min = Math.round(+$('#min').value);
-  if (!r || !SRC[r.value]) return {error: 'Pick a source.'};
-  if (!(min >= 5 && min <= 720)) return {error: 'Minutes: 5 to 720.'};
+  if (!r || !SRC[r.value]) return {error: t('feed.errSrc')};
+  if (!(min >= 5 && min <= 720)) return {error: t('feed.errMin')};
   return {src: r.value, min, commits: clamp(Math.round(+$('#commits').value || 0), 0, 99), tests: $('#h-tests').checked, bug: $('#h-bug').checked, ship: $('#h-ship').checked, at: Date.now(), note: ''};
 }
 const previewXP = d => P.gainFor(D, d);
@@ -446,7 +510,7 @@ function updatePreview() {
   if (d.error) { $('#pvxp').textContent = '—'; $('#pvdetail').textContent = d.error; return; }
   const p = previewXP(d);
   $('#pvxp').textContent = `+${p.xp} XP`;
-  $('#pvdetail').textContent = `base ${p.base} × ${p.mult.toFixed(2)} streak${p.capped ? ' · past daily cap' : ''}`;
+  $('#pvdetail').textContent = t(p.capped ? 'feed.pvCapped' : 'feed.pv', {base: p.base, mult: p.mult.toFixed(2)});
 }
 $('#tab-feed').addEventListener('input', updatePreview);
 $$('.preset').forEach(b => b.addEventListener('click', () => { $('#min').value = b.dataset.min; updatePreview(); }));
@@ -459,7 +523,7 @@ $('#tab-feed').addEventListener('submit', e => {
   const before = D.stage, p = previewXP(s);
   state.manual.push(s);
   save(); render();
-  $('#feedmsg').textContent = `Fed ${s.min} min of ${SRC[s.src].label}. +${p.xp} XP.`;
+  $('#feedmsg').textContent = t('feed.done', {min: s.min, src: N().src(s.src), xp: p.xp});
   fx($('#xpfx'), `+${p.xp} XP`);
   if (D.stage > before) evolve(D.stage);
   ['#h-tests', '#h-bug', '#h-ship'].forEach(q => { $(q).checked = false; });
@@ -470,7 +534,7 @@ $('#loglist').addEventListener('click', e => {
   const b = e.target.closest('[data-del]');
   if (!b) return;
   if (!b.classList.contains('arm')) {
-    b.classList.add('arm'); b.textContent = 'sure?';
+    b.classList.add('arm'); b.textContent = t('log.sure');
     setTimeout(() => { if (b.isConnected) { b.classList.remove('arm'); b.textContent = '×'; } }, 3000);
     return;
   }
@@ -482,7 +546,7 @@ $('#loglist').addEventListener('click', e => {
 for (const p of ['gh', 'gl']) {
   $(`#${p}-save`).addEventListener('click', () => {
     const tok = $(`#${p}-token`).value.trim();
-    if (!tok) { errors[p] = 'Paste a token first.'; renderSetup(); return; }
+    if (!tok) { errors[p] = {key: 'err.noToken'}; renderSetup(); return; }
     errors[p] = null;
     post({type:'setToken', prov: p, token: tok, url: p === 'gl' ? $('#gl-url').value.trim() : undefined});
     $(`#${p}-token`).value = '';
@@ -503,6 +567,8 @@ $('#repos').addEventListener('change', e => {
   save(); render();
 });
 $('#themes').addEventListener('change', e => { if (e.target.name === 'theme') setTheme(e.target.value); });
+$('#lang-ui').addEventListener('change', e => { state.lang = e.target.value; save(); applyLang(); render(); });
+$('#lang-wiki').addEventListener('change', e => { state.wikiLang = e.target.value; save(); applyLang(); render(); });
 $('#t-top').addEventListener('change', e => post({type:'topmost', on: e.target.checked}));
 $('#t-auto').addEventListener('change', e => post({type:'autostart', on: e.target.checked}));
 $('#b-data').addEventListener('click', () => post({type:'openData'}));
@@ -533,6 +599,7 @@ function onHost(m) {
       state = loadState(m.save);
       settings = normSettings(m.settings);
       ready = true;
+      applyLang();
       render();
       if (!settings.gh.connected && !settings.gl.connected) setExpanded(true, 'setup');
       else { if (settings.expanded) setExpanded(true); scan(); }
@@ -542,7 +609,7 @@ function onHost(m) {
       if (m.connected) { state.lastScan[m.connected] = 0; errors[m.connected] = null; scan({only: m.connected}); }
       render();
       break;
-    case 'notice': if (m.prov) errors[m.prov] = m.text; render(); break;
+    case 'notice': if (m.prov) errors[m.prov] = m.key ? {key: 'err.' + m.key} : m.text; render(); break;
     case 'rescan': scan(); break;
     case 'quit': quit(); break;
     case 'api': {
@@ -554,6 +621,7 @@ function onHost(m) {
 }
 
 /* ---------- boot ---------- */
+applyLang();
 readTheme();
 new ResizeObserver(sizeCanvas).observe(canvas);
 new ResizeObserver(() => fit()).observe($('#app'));

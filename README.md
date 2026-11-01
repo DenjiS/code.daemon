@@ -9,7 +9,9 @@ A pixel pet for Windows that grows from your coding habits. It reads your commit
 | Path | What it is |
 | --- | --- |
 | `CodeDaemon.ps1` | Widget host: frameless always-on-top window (PowerShell 5.1 + Edge WebView2), tray icon, DPAPI-encrypted tokens, GitHub/GitLab API proxy |
-| `ui/widget.html`, `ui/widget.js` | Widget UI: pet screen, vitals, Feed / Log / Setup panel |
+| `ui/widget.html`, `ui/widget.js` | Widget UI: pet screen, vitals, Feed / Log / Setup / Wiki panel |
+| `ui/wiki.js` | In-widget wiki: every mechanic, with the pet's live numbers (open with **?** or by clicking a vital) |
+| `ui/i18n.js`, `ui/i18n/` | Translations: English, Russian, Spanish, German, Portuguese (Brazil), Chinese (Simplified), Korean, Japanese |
 | `ui/pet-core.js` | Shared pet engine: XP, stages, forms, mutations, CI health, pixel renderer, SVG card |
 | `ui/themes/` | Sprite themes (Demonic, Succubus), generated from the sheets in `sprites/` |
 | `sprites/` | Source sprite sheets: 11 stages × 4 frames of 64 × 48 |
@@ -59,7 +61,7 @@ The pet is drawn on a 64 × 48 dot-matrix grid from shaded body parts, so each s
 
 ## Themes
 
-![Classic, Derpy, Slavic, Demonic and Succubus themes in the widget](docs/themes.png)
+![Classic, Derpy, Slavic, Asian, Demonic and Succubus themes in the widget](docs/themes.png)
 
 Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, forms and vitals are the same in every theme; only the look changes.
 
@@ -68,6 +70,7 @@ Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, f
 | Classic | Shaded creatures in your affinity color | slime → crawler → biped → kaiju → runner → wyrm → imp → wyvern → dragon → ascended |
 | Derpy | The Classic line drawn badly on purpose: googly eyes that wander off on their own, buck teeth, tongues out | leggy egg → blep → crab → potato → derpasaur → sausage → noodle → gremlin → long boi → chonk → big eye |
 | Slavic | Characters from Slavic fairy tales in their own colors, with folk ornament, on a night-blue screen | pysanka → kolobok → frog tsarevna → domovoi → leshy → humpbacked horse → poloz → Baba Yaga → firebird → Zmei Gorynych → Koschei |
+| Asian | Creatures from Japanese and Chinese folklore in their own colors, on an ink-green screen | daruma → mochi → koi → kappa → maneki-neko → kitsune → shachihoko → oni → tengu → ryu → Raijin |
 | Demonic | Hell-red sprites on a dark red screen | obsidian egg → shadow slime → spider imp → impling → hell kaiju → hellhound → hell serpent → demon → infernal wyvern → archdemon → void lord |
 | Succubus | Succubus line, recolored per affinity (GitHub blue, GitLab orange, Local teal, Unity green, Unreal violet) | heart egg → imp slime → bat imp → chibi imp → chibi succubus → young succubus → lamia → succubus → flying succubus → succubus queen → ascended |
 
@@ -81,11 +84,21 @@ Slavic creatures keep their own colors (a golden kolobok, a green frog, a red-wi
 
 ![Slavic stages: pysanka, kolobok, frog tsarevna, domovoi, leshy, humpbacked horse, poloz, Baba Yaga, firebird, Zmei Gorynych, Koschei](docs/slavic.png)
 
+Asian creatures also bring their own colors, with the crest above the head. The koi climbs the Dragon Gate as the line goes on: it comes back as a golden shachihoko on a castle roof and then as a dragon. Extras: the daruma gets its first eye painted at your first commit and the second one fills in as it gets close to hatching, the maneki-neko beckons, the kitsune has three tails and foxfire, the dragon chases a flaming pearl, Raijin strikes his drums in turns and lightning jumps out of them.
+
+![Asian stages: daruma, mochi, koi, kappa, maneki-neko, kitsune, shachihoko, oni, tengu, ryu, Raijin](docs/asian.png)
+
 To add a theme, draw an 11 × 4 sheet of 64 × 48 frames (rows = stages, columns = animation frames), convert it to `ui/themes/<id>.js` in the same format, add a `<script>` tag in `widget.html` and an entry in `THEME_LIST` in `pet-core.js`.
+
+## Languages
+
+**Setup → Language** picks the interface language (or *System*, which follows Windows) and, separately, the wiki language (or *Same as interface*). Both are saved with the pet; the tray menu follows the interface. The GitHub profile card stays in English.
+
+To add a language, copy `ui/i18n/en.js` to `ui/i18n/<id>.js`, translate it together with the `data-i18n*` texts in `widget.html` and the stage, body, form and theme names (`npm test` lists every key that is missing), add it to `LANGS` in `ui/i18n.js` and a `<script>` tag in `widget.html`.
 
 ## GitHub profile pet
 
-See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `slavic`, `demonic` or `succubus`.
+See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `slavic`, `asian`, `demonic` or `succubus`.
 
 ## Development
 

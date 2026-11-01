@@ -368,7 +368,7 @@ function Receive-PageMessage([string]$json) {
         $okUrl = ($url -match '^https://[A-Za-z0-9.\-]+(:\d+)?(/[A-Za-z0-9._~\-/]*)?$') -or
                  ($url -match '^http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(/[A-Za-z0-9._~\-/]*)?$')
         if (-not $okUrl) {
-          Send-ToPage @{ type = 'notice'; prov = 'gl'; text = 'GitLab URL should look like https://gitlab.com (http only for localhost)' }; return
+          Send-ToPage @{ type = 'notice'; prov = 'gl'; key = 'glUrl'; text = 'GitLab URL should look like https://gitlab.com (http only for localhost)' }; return
         }
         $Settings.glUrl = $url
         $Settings.glToken = if ($tok) { Protect-Token $tok } else { $null }
@@ -388,6 +388,13 @@ function Receive-PageMessage([string]$json) {
     'expanded' { $Settings.expanded = [bool]$m.on; Write-Settings }
     'autostart' { Set-Autostart ([bool]$m.on); Send-ToPage @{ type = 'settings'; settings = (Get-PublicSettings) } }
     'openData' { Start-Process explorer.exe $DataDir }
+    'menu' {
+      # Tray menu labels in the widget's language. Plain text only, kept short.
+      foreach ($k in @('show', 'rescan', 'data', 'quit')) {
+        $txt = [string]$m.items.$k
+        if ($txt -and $txt.Length -le 60 -and $MenuItems[$k]) { $MenuItems[$k].Text = $txt }
+      }
+    }
     'hide' { $form.Hide() }
     'quit' { $script:Quitting = $true; $form.Close() }
   }
@@ -512,11 +519,13 @@ $Tray = New-Object System.Windows.Forms.NotifyIcon
 $Tray.Icon = New-PetIcon
 $Tray.Text = 'code.daemon'
 $Menu = New-Object System.Windows.Forms.ContextMenuStrip
-[void]$Menu.Items.Add('Show / hide', $null, [EventHandler]{ Switch-Widget })
-[void]$Menu.Items.Add('Rescan GitHub / GitLab', $null, [EventHandler]{ Show-Widget; Send-ToPage @{ type = 'rescan' } })
-[void]$Menu.Items.Add('Open save folder', $null, [EventHandler]{ Start-Process explorer.exe $DataDir })
+# Labels start in English; the page sends them in its language ('menu' message).
+$MenuItems = @{}
+$MenuItems.show = $Menu.Items.Add('Show / hide', $null, [EventHandler]{ Switch-Widget })
+$MenuItems.rescan = $Menu.Items.Add('Rescan GitHub / GitLab', $null, [EventHandler]{ Show-Widget; Send-ToPage @{ type = 'rescan' } })
+$MenuItems.data = $Menu.Items.Add('Open save folder', $null, [EventHandler]{ Start-Process explorer.exe $DataDir })
 [void]$Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
-[void]$Menu.Items.Add('Quit', $null, [EventHandler]{ Request-Quit })
+$MenuItems.quit = $Menu.Items.Add('Quit', $null, [EventHandler]{ Request-Quit })
 $Tray.ContextMenuStrip = $Menu
 $Tray.add_MouseClick({
   param($s, $e)
