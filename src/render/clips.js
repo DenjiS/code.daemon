@@ -37,7 +37,7 @@ const BASE = {
   sleep: Object.assign({}, IDLE, {bob: 0, walk: 0, flap: 0, sway: 0}),
 };
 
-/* event clips: reactions to clicks (see reactionFor in reactions.js) and the evolution */
+/* event clips: reactions to clicks (see reactionFor in reactions.js), the evolution and the devolution */
 const CLIPS = {
   pat: {len: 16, face: 'joy', mouth: 'smile', sq: [0.92, 0.88, 0.92, 0.96], fx: 'hearts'},
   tickle: {len: 14, face: 'giggle', mouth: 'open', ox: shake(12), fx: 'sparks'},
@@ -55,6 +55,9 @@ const CLIPS = {
   // two happy jumps and a burst of stars: the widget plays it when the pet evolves
   evolve: {len: 18, face: t => (t < 14 ? 'joy' : null), mouth: t => (t < 14 ? 'open' : null), flap: t => t & 1,
     oy: [0, -2, -4, -4, -2, 0, 0, -2, -4, -4, -2, 0], sq: [1, 1, 1, 1, 1, 1, 0.88, 1, 1, 1, 1, 1, 0.88, 0.95], fx: 'burst'},
+  // a start, a shiver, and it sags while bits of it crumble away: the widget plays it when hunger costs a stage
+  devolve: {len: 20, face: t => (t < 8 ? 'wow' : null), mouth: t => (t < 8 ? 'o' : 'frown'), ox: shake(8),
+    sq: [1, 1, 1, 0.97, 0.94, 0.91, 0.88, 0.88, 0.88, 0.9, 0.92, 0.94, 0.96, 0.98], fx: 'crumble'},
 };
 
 const CHANNELS = ['ox', 'oy', 'sq', 'bob', 'walk', 'flap', 'sway', 'alt', 'phase', 'rock', 'blink', 'look', 'face', 'mouth', 'fx'];

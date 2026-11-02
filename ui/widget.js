@@ -59,6 +59,7 @@ let state = freshState();
 let settings = {gh:{connected:false}, gl:{connected:false, url:'https://gitlab.com'}, topmost:true, expanded:false, autostart:false};
 let errors = {gh:null, gl:null}, rate = {gh:null, gl:null};
 let scanning = false, ready = false, expanded = false, tab = 'feed';
+let shownStage = null;  // the stage on screen, to notice hunger taking one away
 const allSessions = () => state.manual.concat(state.auto);
 const deriveNow = () => P.derive(allSessions(), Date.now(), {ci: state.ci, events: state.events});
 let D = deriveNow();
@@ -180,6 +181,10 @@ function evolve(st) {
   play('evolve');
   const n = N(), form = st >= FORM_STAGE && D.form ? ' · ' + n.upper(n.form(D.form)) : '';
   setTimeout(() => fx($('#evofx'), `→ ${n.stage(st)}${form}`), 600);
+}
+function devolve(st) {
+  play('devolve');
+  setTimeout(() => fx($('#evofx'), `↓ ${N().stage(st)}`), 600);
 }
 
 /* ---------- API (the host adds the token) ---------- */
@@ -356,11 +361,14 @@ function statusText() {
   const [k, v] = P.statusInfo(D), n = N();
   if (k === 'empty') return t(settings.gh.connected || settings.gl.connected ? 'hud.eggWait' : 'hud.eggConnect');
   if (k === 'sick') return t(v.more ? 'st.sickMore' : 'st.sick', {repo: repoLabel(v.repo), more: v.more});
-  if (k === 'next' || k === 'max') return t('st.' + k, {n: v.n, stage: n.lower(n.stage(v.stage)), STAGE: n.stage(v.stage)});
+  if (k === 'next' || k === 'max' || k === 'fading') return t('st.' + k, {n: v.n, stage: n.lower(n.stage(v.stage)), STAGE: n.stage(v.stage)});
   return t('st.' + k, v);
 }
 function render() {
   D = deriveNow();
+  // hunger can take a stage at any minute, not only on a scan: show it when it happens while the widget is open
+  if (ready && shownStage !== null && D.count && D.stage < shownStage) devolve(D.stage);
+  if (ready) shownStage = D.stage;
   applyTheme();
   const st = D.stage, aff = D.affinity, has = D.count > 0, n = N();
   document.documentElement.style.setProperty('--aff', aff ? `var(--src-${aff})` : 'var(--muted)');
@@ -409,10 +417,15 @@ function renderLog() {
   const locked = STAGES.map((x, k) => k).filter(k => k >= FORM_STAGE && D.forms[k]).map(k => `${esc(n.stage(k))} → <b>${esc(n.form(D.forms[k]))}</b>`);
   $('#evo').innerHTML = locked.length ? t('log.evo', {list: locked.join(' · ')})
     : t('log.next', {stage: esc(n.stage(FORM_STAGE)), form: esc(n.form(P.traitAt(D.sorted, Date.now())))});
-  const rows = D.sorted.map(s => ({t: s.at, s})).concat(state.events.map(e => ({t: e.at, e}))).sort((a, b) => b.t - a.t).slice(0, 40);
+  const rows = D.sorted.map(s => ({t: s.at, s})).concat(state.events.map(e => ({t: e.at, e})), D.losses.map(l => ({t: l.end, l})))
+    .sort((a, b) => b.t - a.t).slice(0, 40);
   $('#logempty').hidden = rows.length > 0;
   const del = esc(t('log.del'));
-  $('#loglist').innerHTML = rows.map(({s, e}) => {
+  $('#loglist').innerHTML = rows.map(({s, e, l}) => {
+    if (l) {  // a hunger spell: what it cost, and the stages it took
+      const days = Math.max(1, Math.round((l.end - l.at) / DAY)), fell = l.from !== l.to ? ` · ${esc(n.stage(l.from))} → ${esc(n.stage(l.to))}` : '';
+      return `<li class="lrow" style="--c:var(--bad)"><span class="ldot"></span><div style="min-width:0"><div class="l1">${t(l.ongoing ? 'log.starving' : 'log.hunger', {n: days})}${fell}</div><div class="l2">${fmtWhen(l.at)} → ${l.ongoing ? esc(t('time.now')) : fmtWhen(l.end)}</div></div><span class="lxp">−${l.xp}</span><span></span></li>`;
+    }
     if (e) return `<li class="lrow" style="--c:var(--good)"><span class="ldot"></span><div style="min-width:0"><div class="l1">${t('log.fixed')}</div><div class="l2">${fmtWhen(e.at)} · ${esc(repoLabel(e.repo))}</div></div><span class="lxp">+${D.gain[e.id] || 0}</span><span></span></li>`;
     const late = P.isLate(s.at);
     const flags = [s.tests && 'tests', s.bug && 'fix', s.ship && 'ship', late && 'late'].filter(Boolean).map(f => t('flag.' + f)).join(' · ');

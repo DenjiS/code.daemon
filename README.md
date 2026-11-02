@@ -12,7 +12,7 @@ A pixel pet for Windows that grows from your coding habits. It reads your commit
 | `ui/widget.html`, `ui/widget.js` | Widget UI: pet screen, vitals, Feed / Log / Setup / Wiki panel |
 | `ui/wiki.js` | In-widget wiki: every mechanic, with the pet's live numbers (open with **?** or by clicking a vital) |
 | `ui/i18n.js`, `ui/i18n/` | Translations: English, Russian, Spanish, German, Portuguese (Brazil), Chinese (Simplified), Korean, Japanese |
-| `src/` | Pet engine source: `core/` (XP, stages, forms, mutations, CI health, GitHub scan), `render/` (pixel renderer in layers, theme registry, click reactions, SVG card), `themes/` (one file per theme) |
+| `src/` | Pet engine source: `core/` (XP, hunger, stages, forms, mutations, CI health, GitHub scan), `render/` (pixel renderer in layers, theme registry, click reactions, the hungry look, SVG card), `themes/` (one file per theme) |
 | `ui/pet-core.js` | The engine as one file for the widget, built from `src/` by `tools/build.cjs` (`npm run build`) |
 | `github-profile/` | GitHub Action that puts the same pet, animated, on your GitHub profile |
 | `lib/` | Microsoft WebView2 SDK (WinForms) and native loaders |
@@ -35,6 +35,7 @@ If nothing appears, run `Start code.daemon (debug).cmd` to see errors. Requires 
 - **CI**: turning a red build green on the same branch earns +15 XP, at most once a day per repo. It counts toward the daily soft cap.
 - **Commits** are matched by author email (on GitLab, by name only when it shows no email). A commit rebased or cherry-picked onto another branch counts once.
 - **Rescans**: the widget re-reads the last 3 days on every scan, starting at the beginning of a session so none is cut in two. A repo that fails to scan keeps its saved sessions until the next scan.
+- **Hunger**: a pet nobody codes for gets hungry and loses XP. It starts starving once 3 days have passed since the last session *and* Energy is down to 5 (so a week of long days keeps it fed for about a week). Hunger grows to full over 7 days; full hunger eats 4% of the stage's XP band a day, at most 25 XP. XP never drops under the stage's threshold: after 3 days at the bottom the pet **devolves**, landing two days of hunger under the top of the stage below, and keeps going down to the egg, which only cools. Forms of the lost stages are forgotten, so the next evolution picks a new one. One session ends it; a fixed build adds XP but doesn't feed it. A week off costs next to nothing, a month off a week or two of coding.
 
 | Stage | XP | Body |
 | --- | ---: | --- |
@@ -54,8 +55,9 @@ Rough pace: a heavy daily vibe-coding habit reaches KERNEL in about 6 months and
 
 - **Crest** (from NIBBLE): the source with the most XP in 30 days. GitHub branch antenna, GitLab pipeline crest, Local `>_` mouth, Unity companion cube, Unreal material sheen. Unity and Unreal repos are detected from `ProjectSettings/` + `Assets/` and `*.uproject`.
 - **Forms** (from WORD): every evolution locks a form from your last 30 days. Guardian (tests, shield), Debugger (bug fixes, wrench), Night Owl (late nights, moon and glowing eyes), Shipper (releases, crate), Streaker (7+ day streak, fire), Polyglot (4+ sources, stripes), Vibecoder (10+ commits per session, headphones and notes), or Core.
-- **Mutations**: Shiny (30-day streak), Cursed (coded on a Friday the 13th), Crowned (1000 commits).
+- **Mutations**, from the last 365 days: Shiny (30-day streak), Cursed (coded on a Friday the 13th), Crowned (10,000 XP earned), Committed (1000 commits: your real contribution graph of the last 29 weeks, dim on the wall behind the pet). Earned again every year, lost a year after the last time.
 - **Vitals**: Energy (recent minutes, 24 h half-life), Mood (streak, variety, tests and fixes), Rest (sessions ending 23:00–05:00 and marathons), Build (CI health of repos touched in 14 days; a red build makes the pet sick).
+- **Looks**: below Energy 20 the pet sleeps and looks worn out in every theme: a thinner body and limbs, ribs, sunken eyes, faded colors. Starving makes all of it stronger, a pet about to devolve flickers, and a devolution plays its own animation.
 
 The pet is drawn on a 64 × 48 dot-matrix grid from shaded body parts, so each stage has its own silhouette and animation (bouncing, walking, slithering, wing flaps, floating).
 
@@ -113,7 +115,7 @@ Animations are clips: data in `src/render/clips.js`, not code in each theme. A c
 hop: {len: 10, oy: [0, -2, -4, -5, -5, -4, -2, 0, 0, 0], sq: [1, 1, 1, 1, 1, 1, 1, 0.88, 0.95, 1], face: t => (t < 7 ? 'wow' : 'joy'), walk: t => t & 1}
 ```
 
-Add one to `CLIPS` (or call `PetCore.defineClip(name, clip)`) and play it with `build(D, f, {clip: {name, t}})`; the widget plays `evolve` when the pet evolves and a reaction when you click it. Idle, sleep and the weak bounce of a critically sick pet are clips too (`BASE`). A theme can bring its own version of any clip in `clips`.
+Add one to `CLIPS` (or call `PetCore.defineClip(name, clip)`) and play it with `build(D, f, {clip: {name, t}})`; the widget plays `evolve` when the pet evolves, `devolve` when hunger costs it a stage, and a reaction when you click it. Idle, sleep and the weak bounce of a critically sick pet are clips too (`BASE`). A theme can bring its own version of any clip in `clips`.
 
 ## Languages
 

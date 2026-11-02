@@ -22,7 +22,7 @@ const vals = v => v && typeof v === 'object' ? Object.values(v) : [String(v)];
 const holes = s => [...s.matchAll(/\{(\w+)\}/g)].map(m => m[1]).sort();
 const tags = s => [...s.matchAll(/<\/?(\w+)/g)].map(m => m[0]).sort().join(' ');
 const hrefs = s => [...s.matchAll(/href="([^"]*)"/g)].map(m => m[1]).sort().join(' ');
-const EXTRA = {'st.next': ['STAGE'], 'st.max': ['STAGE']};  // values a translation may use that English does not
+const EXTRA = {'st.next': ['STAGE'], 'st.max': ['STAGE'], 'st.fading': ['STAGE']};  // values a translation may use that English does not
 
 test('every language in the list has a dictionary file and covers every key', () => {
   for (const l of I.LANGS) {

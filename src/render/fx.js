@@ -51,6 +51,17 @@ const FX = {
       if (k % 2) ctx.put(x, y, c); else star(ctx, x, y, c);
     }
   },
+  crumble(ctx, t) {  // bits of the creature come loose and fall to the ground, greying as they go
+    const {A} = spot(ctx), [x0, y0, x1] = A.box, c = ctx.skin || ctx.body;
+    for (let k = 0; k < 8; k++) {
+      const age = t - k * 2;
+      if (age < 0) continue;
+      const x = Math.round(x0 + 2 + (x1 - x0 - 4) * (((k * 37) % 100) / 100)), y = Math.round(y0 + 3 + ((k * 23) % 9) + age * age * 0.12 + age * 0.4);
+      if (y > G) continue;
+      ctx.put(x, y, mix(c, ctx.screen, Math.min(0.75, 0.2 + age * 0.06)));
+      if (age < 4) ctx.put(x + 1, y, mix(c, ctx.screen, 0.45));
+    }
+  },
 };
 
 function playFx(ctx) {

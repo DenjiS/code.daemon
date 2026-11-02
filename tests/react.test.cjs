@@ -59,11 +59,11 @@ test('every reaction draws on every stage of every theme that reacts, and change
   }
 });
 
-test('every stage of every theme that reacts can be clicked on the head and the body', () => {
-  for (const theme of REACTING) for (let st = 1; st <= 10; st++) {
+test('every stage of every theme that reacts can be clicked on the head and the body, fed or starving', () => {
+  for (const theme of REACTING) for (let st = 1; st <= 10; st++) for (const hungry of [{}, {energy: 2, starving: true}]) {
     const zones = new Set();
-    for (let y = 0; y < P.GH; y++) for (let x = 0; x < P.GW; x++) zones.add(P.hitTest(pet(st), 8, {theme}, x, y));
-    for (const z of ['head', 'body', null]) assert.ok(zones.has(z), `${theme} stage ${st} has no ${z === null ? 'empty screen' : z}`);
+    for (let y = 0; y < P.GH; y++) for (let x = 0; x < P.GW; x++) zones.add(P.hitTest(pet(st, hungry), 8, {theme}, x, y));
+    for (const z of ['head', 'body', null]) assert.ok(zones.has(z), `${theme} stage ${st}${hungry.starving ? ' starving' : ''} has no ${z === null ? 'empty screen' : z}`);
   }
 });
 

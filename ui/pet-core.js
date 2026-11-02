@@ -49,18 +49,35 @@ const FORMS = {
   polyglot: {name: 'Polyglot',  rule: '4+ sources in 30 days: striped in their colors'},
   vibe:     {name: 'Vibecoder', rule: '10+ commits per session on average: headphones and floating notes'},
 };
+// Mutations look at the last MUTATION_DAYS only: earned again every year, lost a year after the last time.
+const MUTATION_DAYS = 365;
 const MUTATIONS = {
-  shiny:   {name: 'Shiny',   rule: 'Coded 30 days in a row at some point'},
-  cursed:  {name: 'Cursed',  rule: 'Coded on a Friday the 13th'},
-  crowned: {name: 'Crowned', rule: '1000 commits'},
+  shiny:   {name: 'Shiny',   rule: 'Coded 30 days in a row within a year'},
+  cursed:  {name: 'Cursed',  rule: 'Coded on a Friday the 13th within a year'},
+  crowned: {name: 'Crowned', rule: '10,000 XP earned within a year'},
+  committed: {name: 'Committed', rule: '1000 commits within a year'},
 };
+const CROWN_XP = 10000, COMMITTED = 1000;
 const PET = {github: '#8E9BFF', gitlab: '#FF9B5E', local: '#4ADBC3', unity: '#B4E15C', unreal: '#E78CF7', none: '#C7CFDA'};
 const FIX_XP = 15;
 const DAY_SOFT_CAP = 90, OVER_CAP_RATE = 0.15;
 // late night, 23:00-05:00 local time: the Night Owl form and REST both count it
 const isLate = ms => { const h = new Date(ms).getHours(); return h >= 23 || h < 5; };
 
-module.exports = {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, isLate};
+/* Hunger: a pet nobody codes for loses XP, and one left at the bottom of its stage devolves (core/hunger.js).
+   Tuned so a week off costs next to nothing, a month off costs a week or two of coding, and only months of silence
+   take a pet back down several stages: every stage to BYTE empties in about 25 days, bigger ones take months. */
+const HUNGER = {
+  grace: 3,      // days: never hungry sooner than this after the last session...
+  energy: 5,     // ...and not before Energy is down to this
+  ramp: 7,       // days for hunger to grow from nothing to full
+  share: 0.04,   // full hunger eats this share of the stage's XP band a day...
+  cap: 25,       // ...but never more than this many XP a day
+  floor: 3,      // days at the bottom of a stage before the pet devolves
+  fall: 2,       // a devolved pet lands this many days of full hunger below the top of the stage under it
+};
+
+module.exports = {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED, isLate};
 },
 'core/xp': function (module, require) {
 // XP math: what one session is worth, the streak bonus and the daily soft cap.
@@ -171,14 +188,74 @@ function traitAt(seen, t) {
 
 module.exports = {traitScores, traitAt};
 },
+'core/hunger': function (module, require) {
+/* ---------- hunger: what a pet loses while nobody codes ----------
+   derive() replays the history in time order and lets hunger run in the gaps: between one session and the next,
+   and after the last one until now. The numbers are HUNGER in rules.js.
+
+   - The pet starts starving once both hold: HUNGER.grace days have passed since the last session, and Energy is down
+     to HUNGER.energy. A pet fed well lasts longer: a week of long days keeps it going for about a week.
+   - Hunger grows from nothing to full over HUNGER.ramp days. Full hunger eats share × the stage's XP band a day,
+     at most cap XP, so every stage up to BYTE empties in about 25 days and the big ones take months.
+   - XP never drops under the stage's threshold. The pet sits at the bottom for HUNGER.floor days, then devolves and
+     lands HUNGER.fall days of full hunger under the top of the stage below, and hunger goes on from there.
+   - All the way down to the egg; the egg only cools (its XP drains to 0) and never breaks.
+   - Any session ends it at once. CI fixes add XP but don't feed the pet. */
+'use strict';
+const {DAY} = require('core/util');
+const {STAGES, MAX_STAGE, HUNGER} = require('core/rules');
+
+// Energy is 100·(1 − e^(−W / 90)), W the weighted minutes: W at the hunger line
+const W_LINE = -90 * Math.log(1 - HUNGER.energy / 100);
+// XP a day full hunger eats at a stage. The last stage has no band: it loses XP over its threshold at the cap.
+const rateOf = st => Math.min(HUNGER.cap, HUNGER.share * (st < MAX_STAGE ? STAGES[st + 1].xp - STAGES[st].xp : Infinity));
+// When a pet fed last at `at`, with W weighted minutes right then, starts starving. Energy halves every 24 h.
+const starveAt = (at, W) => at + Math.max(HUNGER.grace, W > W_LINE ? Math.log2(W / W_LINE) : 0) * DAY;
+// How hungry, 0..1, d days into starving
+const hungerAt = d => Math.max(0, Math.min(1, d / HUNGER.ramp));
+// Days of full hunger in the first d days of starving (it grows linearly over the ramp), and back
+const R = HUNGER.ramp;
+const eaten = d => (d <= 0 ? 0 : d < R ? d * d / (2 * R) : d - R / 2);
+const eatenInv = e => (e <= 0 ? 0 : e < R / 2 ? Math.sqrt(2 * R * e) : e + R / 2);
+
+/* Moves p = {xp, stage, floorAt} from time a to b (ms) of a spell that began at S. floorAt is when it reached the
+   bottom of its stage, so a wait can span calls. fell(at, from, to) hears about each devolution. Returns the XP eaten. */
+function starve(p, S, a, b, fell) {
+  a = Math.max(a, S);
+  let lost = 0;
+  for (let guard = 0; a < b && guard < 64; guard++) {
+    const base = STAGES[p.stage].xp;
+    if (p.xp > base) {
+      p.floorAt = null;
+      const r = rateOf(p.stage), e0 = eaten((a - S) / DAY), can = (eaten((b - S) / DAY) - e0) * r;
+      if (can < p.xp - base) { p.xp -= can; lost += can; break; }
+      const t = S + eatenInv(e0 + (p.xp - base) / r) * DAY;
+      lost += p.xp - base; p.xp = base; p.floorAt = t; a = Math.max(a, t);
+    } else {
+      if (p.stage === 0) { p.xp = 0; break; }
+      if (p.floorAt == null) p.floorAt = a;
+      const at = p.floorAt + HUNGER.floor * DAY;
+      if (at > b) break;
+      const from = p.stage, land = base - HUNGER.fall * rateOf(from - 1);
+      lost += base - land;
+      p.stage = from - 1; p.xp = land; p.floorAt = null; a = at;
+      if (fell) fell(at, from, p.stage);
+    }
+  }
+  return lost;
+}
+
+module.exports = {W_LINE, rateOf, starveAt, hungerAt, eaten, eatenInv, starve};
+},
 'core/derive': function (module, require) {
 /* ---------- derive everything from sessions ---------- */
 'use strict';
 const {DAY, HOUR, clamp, dayIdx} = require('core/util');
-const {STAGES, MAX_STAGE, FORM_STAGE, DAY_SOFT_CAP, isLate} = require('core/rules');
+const {STAGES, MAX_STAGE, FORM_STAGE, DAY_SOFT_CAP, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED, isLate} = require('core/rules');
 const {sessionXP, mult, softCap} = require('core/xp');
 const {valid} = require('core/sessions');
 const {traitAt} = require('core/forms');
+const {rateOf, starveAt, hungerAt, starve} = require('core/hunger');
 
 function derive(list, now, extra) {
   extra = extra || {};
@@ -187,8 +264,22 @@ function derive(list, now, extra) {
   const sorted = list.filter(valid).sort((a, b) => a.at - b.at);
   const items = sorted.map(s => ({t: s.at, s})).concat(events.map(e => ({t: e.at, e}))).sort((a, b) => a.t - b.t);
   const days = new Set(), dayRaw = new Map(), gain = {}, mults = {}, src30 = {}, srcAll = {}, forms = {}, seen = [];
-  let xp = 0, commits = 0, maxStreak = 0, fri13 = false, stage = 0, fixes = 0;
+  let commits = 0, maxStreak = 0, fixes = 0, peak = 0;
+  // The pet as the replay goes: XP, stage and, while it waits at the bottom of a stage, since when (core/hunger.js).
+  const pet = {xp: 0, stage: 0, floorAt: null};
+  // fed: the last session, fedW: weighted minutes right after it, S: when the pet starts starving, at: replayed up to
+  let fed = null, fedW = 0, S = Infinity, at = -Infinity, spell = null;
+  const losses = [];  // hunger spells: {id, at, end, xp, from, to, falls: [{at, from, to}]}
+  const famish = t => {  // let hunger run up to t
+    if (t > S && t > at) {
+      if (!spell) { spell = {id: 'hunger:' + Math.round(S), at: S, end: S, xp: 0, from: pet.stage, to: pet.stage, falls: []}; losses.push(spell); }
+      spell.xp += starve(pet, S, Math.max(at, S), t, (when, from, to) => { delete forms[from]; spell.falls.push({at: when, from, to}); });
+      spell.end = t; spell.to = pet.stage;
+    }
+    at = Math.max(at, t);
+  };
   for (const it of items) {
+    famish(it.t);
     if (it.s) {
       const s = it.s, d = dayIdx(s.at);
       days.add(d);
@@ -197,21 +288,28 @@ function derive(list, now, extra) {
       const before = dayRaw.get(d) || 0, raw = sessionXP(s) * mult(st);
       dayRaw.set(d, before + raw);
       const g = Math.max(1, Math.round(softCap(before + raw) - softCap(before)));
-      gain[s.id] = g; mults[s.id] = mult(st); xp += g; commits += s.commits || 0;
+      gain[s.id] = g; mults[s.id] = mult(st); pet.xp += g; commits += s.commits || 0;
       srcAll[s.src] = (srcAll[s.src] || 0) + g;
       if (now - s.at < 30 * DAY) src30[s.src] = (src30[s.src] || 0) + g;
-      const dt = new Date(s.at);
-      if (dt.getDay() === 5 && dt.getDate() === 13) fri13 = true;
       seen.push(s);
+      // a session feeds the pet: hunger is over, and the next spell can only start a while after this one
+      fedW = (fed === null ? 0 : fedW * Math.pow(0.5, (s.at - fed) / DAY)) + s.min;
+      fed = s.at; S = starveAt(fed, fedW); spell = null; pet.floorAt = null;
     } else {
       // CI fixes share the daily soft cap with sessions, so a flapping build can't carry the pet.
       const d = dayIdx(it.e.at), before = dayRaw.get(d) || 0;
       dayRaw.set(d, before + it.e.xp);
       const g = Math.max(1, Math.round(softCap(before + it.e.xp) - softCap(before)));
-      xp += g; gain[it.e.id] = g; fixes++;
+      pet.xp += g; gain[it.e.id] = g; fixes++;
     }
-    while (stage < MAX_STAGE && xp >= STAGES[stage + 1].xp) { stage++; if (stage >= FORM_STAGE) forms[stage] = traitAt(seen, it.t); }
+    while (pet.stage < MAX_STAGE && pet.xp >= STAGES[pet.stage + 1].xp) { pet.stage++; if (pet.stage >= FORM_STAGE) forms[pet.stage] = traitAt(seen, it.t); }
+    if (pet.stage > peak) peak = pet.stage;
   }
+  famish(now);
+  const stage = pet.stage, xp = Math.floor(pet.xp + 1e-6);
+  const starving = fed !== null && now >= S;
+  const hunger = starving ? hungerAt((now - S) / DAY) : 0;
+  const fallAt = starving && stage > 0 && pet.floorAt != null ? pet.floorAt + HUNGER.floor * DAY : null;
   const today = dayIdx(now);
   const start = days.has(today) ? today : (days.has(today - 1) ? today - 1 : null);
   let streak = 0; if (start !== null) while (days.has(start - streak)) streak++;
@@ -223,6 +321,13 @@ function derive(list, now, extra) {
   const mood = clamp(Math.round((week.length ? 10 : 0) + streak * 10 + variety * 8 + Math.min(20, quality * 4)), 0, 100);
   const late = week.filter(s => isLate(s.at)).length;
   const rest = clamp(100 - 18 * late - 10 * week.filter(s => s.min >= 240).length, 0, 100);
+  // mutations, from the last year: the longest run of coding days, a Friday the 13th, commits
+  const year = sorted.filter(s => now - s.at < MUTATION_DAYS * DAY), yDays = new Set(year.map(s => dayIdx(s.at)));
+  let yStreak = 0; for (const d of yDays) if (!yDays.has(d - 1)) { let n = 1; while (yDays.has(d + n)) n++; if (n > yStreak) yStreak = n; }
+  const yCommits = year.reduce((a, s) => a + (s.commits || 0), 0);
+  // XP earned in the year, before hunger: sessions and fixed builds
+  const yXP = year.reduce((a, s) => a + (gain[s.id] || 0), 0) + events.filter(e => now - e.at < MUTATION_DAYS * DAY).reduce((a, e) => a + (gain[e.id] || 0), 0);
+  const fri13 = year.some(s => { const dt = new Date(s.at); return dt.getDay() === 5 && dt.getDate() === 13; });
   const pick = o => { let best = null, bv = 0; for (const k in o) if (o[k] > bv) { bv = o[k]; best = k; } return best; };
   const affinity = pick(src30) || pick(srcAll);
   const srcs30 = Object.keys(src30).sort((a, b) => src30[b] - src30[a]);
@@ -237,10 +342,15 @@ function derive(list, now, extra) {
   return {
     sorted, gain, mults, xp, commits, streak, maxStreak, codedToday: days.has(today), days, dayRaw, energy, mood, rest, late, variety,
     affinity, srcs30, stage, forms, form: stage >= FORM_STAGE ? (forms[stage] || 'core') : null,
-    mutations: {shiny: maxStreak >= 30, cursed: fri13, crowned: commits >= 1000},
+    year: {streak: yStreak, commits: yCommits, xp: yXP, fri13},
+    mutations: {shiny: yStreak >= 30, cursed: fri13, crowned: yXP >= CROWN_XP, committed: yCommits >= COMMITTED},
     health, failing, ciTracked: tracked.length, ciPassing: tracked.filter(k => ci[k].s === 'pass').length, fixes,
     sick: failing.length > 0, critical: health < 30,
-    last: sorted.length ? sorted[sorted.length - 1].at : null, count: sorted.length,
+    last: sorted.length ? sorted[sorted.length - 1].at : null, count: sorted.length, now,
+    // hunger: when it starts (or started) for this gap, how hungry now 0..1, XP a day it eats now,
+    // when the pet devolves if it sits at the bottom of its stage, and every spell that cost XP
+    peak, starveAt: fed === null ? null : S, starving, hunger, drain: starving && pet.xp > STAGES[stage].xp ? hunger * rateOf(stage) : 0,
+    fading: fallAt !== null, fallAt, losses: losses.filter(l => l.xp >= 0.5 || l.falls.length).map(l => Object.assign({}, l, {xp: Math.round(l.xp), ongoing: l === spell && starving})),
   };
 }
 // XP a new session would earn right now, given what D already counted today.
@@ -253,11 +363,14 @@ function gainFor(D, s) {
 
 // What the status line should say, as a key and its values: the first of these that applies.
 // statusLine() words it in English (profile card); the widget words it in the chosen language.
+const daysTo = (D, t) => { const d = Math.ceil((t - D.now) / DAY); return Number.isFinite(d) ? Math.max(1, d) : 1; };
 function statusInfo(D) {
   if (!D.count) return ['empty', {}];
-  if (D.stage === 0) return ['incubating', {n: STAGES[1].xp - D.xp}];
+  if (D.stage === 0) return D.starving ? ['cooling', {}] : ['incubating', {n: STAGES[1].xp - D.xp}];
+  if (D.fading) return ['fading', {n: daysTo(D, D.fallAt), stage: D.stage - 1}];
+  if (D.starving) return ['starving', {n: Math.max(1, Math.round(D.drain))}];
   if (D.failing.length) return ['sick', {repo: D.failing[0], more: D.failing.length - 1}];
-  if (D.energy < 20) return ['asleep', {}];
+  if (D.energy < 20) return ['asleep', {n: daysTo(D, D.starveAt)}];
   if (D.rest < 50) return ['tired', {n: D.late}];
   if (D.streak >= 2 && !D.codedToday) return ['risk', {n: D.streak}];
   if (D.stage < MAX_STAGE) return ['next', {n: STAGES[D.stage + 1].xp - D.xp, stage: D.stage + 1}];
@@ -270,8 +383,11 @@ function statusLine(D, opts) {
   switch (k) {
     case 'empty': return opts.empty || '> egg found. waiting for commits';
     case 'incubating': return `> incubating · ${v.n} XP to hatch`;
+    case 'cooling': return '> egg is cooling · feed it a commit';
+    case 'fading': return `> fading · back to ${STAGES[v.stage].name.toLowerCase()} in ${v.n}d`;
+    case 'starving': return `> starving · −${v.n} XP a day`;
     case 'sick': return `> sick · CI failing in ${name(v.repo)}${v.more ? ` +${v.more}` : ''}`;
-    case 'asleep': return '> asleep · feed it a commit';
+    case 'asleep': return `> asleep · starves in ${v.n}d`;
     case 'tired': return `> tired · ${v.n} late night${v.n === 1 ? '' : 's'} this week`;
     case 'risk': return `> streak ${v.n}d at risk · code today`;
     case 'next': return `> ${v.n} XP to ${STAGES[v.stage].name.toLowerCase()}`;
@@ -386,11 +502,13 @@ module.exports = {Q_REPO, Q_HIST, scanGitHubRepo};
 'use strict';
 const C = {steel: '#A9B8C9', steelDark: '#5C6B7C', white: '#FFFFFF', wood: '#B7834C', woodDark: '#7A5230', moon: '#E8E4C9',
   red: '#FF5A3C', orange: '#FF9B3C', yellow: '#FFE27A', gold: '#FFD24A', gem: '#FF5A7A', sick: '#8FA08A', drop: '#7FC8FF',
-  alarm: '#FF5A5A', curse: '#FF4D4D', spark: '#FFF6C8', horn: '#ECE4CF', tongue: '#FF6F7D', note: '#F5F0FF', eyeWhite: '#F2F4F8'};
+  alarm: '#FF5A5A', curse: '#FF4D4D', spark: '#FFF6C8', horn: '#ECE4CF', tongue: '#FF6F7D', note: '#F5F0FF', eyeWhite: '#F2F4F8', frost: '#A9C6DE'};
 const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 const mix = (a, b, t) => { const A = hex(a), B = hex(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+// the grey of the same brightness
+const gray = c => { const [r, g, b] = hex(c), v = Math.round(0.3 * r + 0.59 * g + 0.11 * b).toString(16).padStart(2, '0'); return '#' + v + v + v; };
 
-module.exports = {C, mix};
+module.exports = {C, mix, gray};
 },
 'render/raster': function (module, require) {
 /* ======================================================================
@@ -563,7 +681,7 @@ const BASE = {
   sleep: Object.assign({}, IDLE, {bob: 0, walk: 0, flap: 0, sway: 0}),
 };
 
-/* event clips: reactions to clicks (see reactionFor in reactions.js) and the evolution */
+/* event clips: reactions to clicks (see reactionFor in reactions.js), the evolution and the devolution */
 const CLIPS = {
   pat: {len: 16, face: 'joy', mouth: 'smile', sq: [0.92, 0.88, 0.92, 0.96], fx: 'hearts'},
   tickle: {len: 14, face: 'giggle', mouth: 'open', ox: shake(12), fx: 'sparks'},
@@ -581,6 +699,9 @@ const CLIPS = {
   // two happy jumps and a burst of stars: the widget plays it when the pet evolves
   evolve: {len: 18, face: t => (t < 14 ? 'joy' : null), mouth: t => (t < 14 ? 'open' : null), flap: t => t & 1,
     oy: [0, -2, -4, -4, -2, 0, 0, -2, -4, -4, -2, 0], sq: [1, 1, 1, 1, 1, 1, 0.88, 1, 1, 1, 1, 1, 0.88, 0.95], fx: 'burst'},
+  // a start, a shiver, and it sags while bits of it crumble away: the widget plays it when hunger costs a stage
+  devolve: {len: 20, face: t => (t < 8 ? 'wow' : null), mouth: t => (t < 8 ? 'o' : 'frown'), ox: shake(8),
+    sq: [1, 1, 1, 0.97, 0.94, 0.91, 0.88, 0.88, 0.88, 0.9, 0.92, 0.94, 0.96, 0.98], fx: 'crumble'},
 };
 
 const CHANNELS = ['ox', 'oy', 'sq', 'bob', 'walk', 'flap', 'sway', 'alt', 'phase', 'rock', 'blink', 'look', 'face', 'mouth', 'fx'];
@@ -742,6 +863,17 @@ const FX = {
       if (y < 0 || y > G + 2 || x < 0 || x >= GW) continue;
       const c = t < 8 ? C.gold : t < 12 ? C.spark : mix(C.spark, ctx.screen, 0.5);
       if (k % 2) ctx.put(x, y, c); else star(ctx, x, y, c);
+    }
+  },
+  crumble(ctx, t) {  // bits of the creature come loose and fall to the ground, greying as they go
+    const {A} = spot(ctx), [x0, y0, x1] = A.box, c = ctx.skin || ctx.body;
+    for (let k = 0; k < 8; k++) {
+      const age = t - k * 2;
+      if (age < 0) continue;
+      const x = Math.round(x0 + 2 + (x1 - x0 - 4) * (((k * 37) % 100) / 100)), y = Math.round(y0 + 3 + ((k * 23) % 9) + age * age * 0.12 + age * 0.4);
+      if (y > G) continue;
+      ctx.put(x, y, mix(c, ctx.screen, Math.min(0.75, 0.2 + age * 0.06)));
+      if (age < 4) ctx.put(x + 1, y, mix(c, ctx.screen, 0.45));
     }
   },
 };
@@ -1065,24 +1197,207 @@ function sleep(ctx) {
 
 module.exports = {shadow, orbit, shiny, sick, sleep};
 },
+'render/gaunt': function (module, require) {
+/* ---------- gaunt: a pet that went too long without code ----------
+   level(D, st): 0 fed, 1 exhausted (Energy under 20, so asleep), 2 starving (losing XP, see core/hunger.js).
+   An exhausted pet looks it, every theme alike, and a starving one more so:
+     thin(pl, lvl)    narrows the body under the face, row by row, before anything is drawn: the head keeps its size,
+                      so the body looks thinner next to it. build() and hitTest() both draw from the thinned plan.
+     ribs(ctx)        ribs across the chest (front view) or down the side (a body lying long)
+     sockets(ctx)     dark rings under (and when starving, over) the eyes
+     fade(c, ...)     colors drained toward grey
+   And a pet about to devolve flickers like a dying process: glitch(ctx), on the finished frame. */
+'use strict';
+const {C, mix, gray} = require('render/colors');
+const {GW, GH, K} = require('render/raster');
+
+function level(D, st) {
+  if (!D || !D.count || !st) return 0;
+  if (D.starving) return 2;
+  return D.energy < 20 ? 1 : 0;
+}
+
+// a color drained toward grey and a little toward the screen
+const fade = (c, lvl, screen) => (lvl ? mix(mix(c, gray(c), lvl > 1 ? 0.55 : 0.35), screen, lvl > 1 ? 0.12 : 0.06) : c);
+
+// The cells an eye covers, rim included: [x0, y0, x1, y1]. Pixel eyes, googly eyes (Derpy) and a visor.
+function eyeBox(e) {
+  if (e.g) { const rx = e.rx || e.r, ry = e.r; return [Math.floor(e.x - rx - 1), Math.floor(e.y - ry - 1), Math.ceil(e.x + rx + 1), Math.ceil(e.y + ry + 1)]; }
+  return [e.x, e.y, e.x + (e.w || 1) - 1, e.y + (e.visor ? 1 : e.h || 1) - 1];
+}
+
+// The rows of a set of cells: Map(y -> sorted xs)
+function rows(m) {
+  const r = new Map();
+  for (const k of m) { const y = (k / GW) | 0; if (!r.has(y)) r.set(y, []); r.get(y).push(k % GW); }
+  for (const xs of r.values()) xs.sort((a, b) => a - b);
+  return r;
+}
+
+// Each run of cells in a row of m, from row `from` down, loses e cells at both ends; e from the run's length.
+function narrow(m, from, cut) {
+  const out = new Set(m);
+  for (const [y, xs] of rows(m)) {
+    if (y < from) continue;
+    for (let i = 0; i < xs.length;) {
+      let j = i; while (j + 1 < xs.length && xs[j + 1] === xs[j] + 1) j++;
+      const e = cut(j - i + 1);
+      for (let k = 0; k < e; k++) { out.delete(K(xs[i + k], y)); out.delete(K(xs[j - k], y)); }
+      i = j + 1;
+    }
+  }
+  return out;
+}
+
+function thin(pl, lvl) {
+  if (!lvl || !pl || !pl.parts) return pl;
+  // rows above the face stay whole: from just under the lowest eye or the mouth, whichever is lower
+  let face = -Infinity;
+  for (const e of pl.eyes || []) face = Math.max(face, eyeBox(e)[3]);
+  if (pl.mouth) face = Math.max(face, Math.round(pl.mouth.y) + 1);
+  const from = Number.isFinite(face) ? face + 2 : 0;
+  const cut = lvl > 1 ? n => (n >= 10 ? 2 : n >= 5 ? 1 : 0) : n => (n >= 7 ? 1 : 0);
+  const cutLimb = lvl > 1 ? n => (n >= 5 ? 1 : 0) : n => (n >= 6 ? 1 : 0);  // legs and arms get skinny, never thinner than 3
+  const gone = new Set();
+  let torso = null, most = 0;
+  for (const p of pl.parts) {
+    // flesh only: parts in a color of their own (a mortar, a shirt, a throne) keep their shape
+    const limb = p.role === 'limb' || p.role === 'far', skin = typeof p.color !== 'string';
+    if (!skin || (p.role !== 'body' && p.role !== 'belly' && !limb)) continue;
+    const m = narrow(p.m, from, limb ? cutLimb : cut);
+    if (p.role === 'body') { for (const k of p.m) if (!m.has(k)) gone.add(k); }
+    p.m = m;
+    if (p.role === 'body' && !p.color) { let n = 0; for (const k of m) if (((k / GW) | 0) >= from) n++; if (n > most) { most = n; torso = p; } }
+  }
+  // a belly never shows where the body under it was taken away
+  for (const p of pl.parts) if (p.role === 'belly') for (const k of gone) p.m.delete(k);
+  pl.gaunt = {lvl, from, torso};
+  return pl;
+}
+
+// Ribs on the torso, drawn over the body and belly but under anything in front of them (arms, wings).
+function ribs(ctx) {
+  const {pl, owner, put, screen, pal} = ctx, g = pl.gaunt;
+  if (!g || !g.torso || !owner) return;
+  const own = k => { const p = owner.get(k); return p === g.torso || (p && p.role === 'belly'); };
+  const cells = [...g.torso.m].filter(k => ((k / GW) | 0) >= g.from && own(k));
+  if (cells.length < 30) return;
+  let x0 = GW, x1 = 0, y0 = GH, y1 = 0;
+  for (const k of cells) { const x = k % GW, y = (k / GW) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, cx = Math.round((x0 + x1) / 2), t = g.lvl > 1 ? 0.45 : 0.3;
+  const inside = k => own(k) && own(k - 1) && own(k + 1) && own(k - GW) && own(k + GW);
+  const shade = (x, y) => { const k = K(x, y); if (inside(k)) put(x, y, mix(owner.get(k).paint || pal.body, screen, t)); };
+  if (w >= h * 1.6) {
+    // a body lying long, seen from the side: ribs run down it, over its front half
+    const from = Math.round(cx - w * 0.05), to = Math.round(cx + w * 0.3);
+    for (let x = from; x <= to; x += 2) for (let y = y0 + 1; y <= y0 + Math.round(h * 0.7); y++) shade(x, y);
+  } else {
+    // seen from the front: ribs across the chest, both sides of the breastbone
+    const last = y0 + Math.max(3, Math.round(h * (g.lvl > 1 ? 0.65 : 0.5)));
+    for (let y = y0 + 1; y <= last; y += 2) {
+      const half = Math.round(w * 0.36 * (1 - 0.35 * (y - y0) / h));
+      for (let x = cx - half; x <= cx + half; x++) if (Math.abs(x - cx) >= 1) shade(x, y);
+    }
+  }
+}
+
+// Sunken eyes: a dark ring under each eye, and over it too when starving. Only on the creature, never on an eye.
+function sockets(ctx) {
+  const {pl, owner, put, skin, screen} = ctx, g = pl.gaunt;
+  if (!g || !owner) return;
+  const boxes = pl.eyes.map(eyeBox);
+  const free = (x, y) => owner.has(K(x, y)) && !boxes.some(([a, b, c, d]) => x >= a && x <= c && y >= b && y <= d);
+  const deep = mix(skin, screen, g.lvl > 1 ? 0.62 : 0.5), brow = mix(skin, screen, 0.4);
+  for (const [x0, y0, x1, y1] of boxes) {
+    for (let x = x0; x <= x1; x++) if (free(x, y1 + 1)) put(x, y1 + 1, deep);
+    if (free(x0 - 1, y1)) put(x0 - 1, y1, deep);
+    if (free(x1 + 1, y1)) put(x1 + 1, y1, deep);
+    if (g.lvl > 1) for (let x = x0; x <= x1; x++) if (free(x, y0 - 1)) put(x, y0 - 1, brow);
+  }
+}
+
+// About to devolve: now and then a band of rows slips sideways and dims, like a process about to be killed.
+function glitch(ctx) {
+  const {D, buf, f, motion, screen, A} = ctx;
+  if (!D.fading || !motion) return;
+  const k = f % 24;
+  if (k > 2) return;
+  const [, y0, , y1] = A.box, span = Math.max(4, y1 - y0);
+  const top = Math.round(y0 + ((f * 7) % span)), n = k === 1 ? 3 : 2, dx = (f >> 3) & 1 ? 1 : -1;
+  for (let y = top; y < Math.min(GH, top + n); y++) {
+    const row = [];
+    for (let x = 0; x < GW; x++) { const c = buf.get(K(x, y)); if (c) row.push([x, c]); }
+    for (const [x] of row) buf.delete(K(x, y));
+    for (const [x, c] of row) if (x + dx >= 0 && x + dx < GW) buf.set(K(x + dx, y), k === 2 ? mix(c, screen, 0.5) : c);
+  }
+  if (k === 0) for (let i = 0; i < 6; i++) {  // a few dead pixels
+    const x = (f * 13 + i * 11) % GW, y = Math.round(y0 + ((f * 5 + i * 7) % span));
+    if (buf.has(K(x, y))) buf.set(K(x, y), mix(C.steel, screen, 0.4));
+  }
+}
+
+module.exports = {level, fade, eyeBox, thin, ribs, sockets, glitch};
+},
+'render/marks': function (module, require) {
+/* ---------- marks: mutations drawn on the screen itself ----------
+   wall(ctx): the Committed mutation. A dim contribution graph on the wall behind the pet: your real commits of the
+   last 29 weeks, one column a week (this week on the right), one row a day (Monday on top), four greens by how many.
+   It is drawn first, on the fixed screen, so the pet and every other effect stay in front of it, and dim enough to
+   read as a backdrop. It keeps clear of the Night Owl's moon in the top left corner. */
+'use strict';
+const {dayIdx} = require('core/util');
+const {mix} = require('render/colors');
+const {GW} = require('render/raster');
+
+const GREENS = ['#0E4429', '#006D32', '#26A641', '#39D353'];
+const WEEKS = 29, X0 = 4, Y0 = 9;  // 29 columns two cells apart fill the width; 7 rows from y 9 to 21
+const level = n => (n >= 10 ? 3 : n >= 6 ? 2 : n >= 3 ? 1 : 0);
+
+// commits a day, from the pet's sessions; a made-up week pattern when there are none to read (previews, tests)
+function days(D) {
+  const by = new Map();
+  if (D.sorted && Number.isFinite(D.now)) { for (const s of D.sorted) { const d = dayIdx(s.at); by.set(d, (by.get(d) || 0) + (s.commits || 0)); } return by; }
+  const today = dayIdx(Date.UTC(2026, 10, 2));
+  for (let i = 0; i < WEEKS * 7; i++) if ((i * 7 + (i % 5) * 3) % 4) by.set(today - i, (i * 13) % 12 + 1);
+  return by;
+}
+
+function wall(ctx) {
+  const {D, mut, put0, screen, form} = ctx;
+  if (!mut.committed) return;
+  const by = days(D), now = Number.isFinite(D.now) ? D.now : Date.UTC(2026, 10, 2);
+  const today = dayIdx(now), wd = (new Date(now).getDay() + 6) % 7;  // Monday 0
+  for (let c = 0; c < WEEKS; c++) for (let r = 0; r < 7; r++) {
+    const day = today - wd + r - (WEEKS - 1 - c) * 7, n = by.get(day) || 0;
+    if (day > today || !n) continue;
+    const x = X0 + c * 2, y = Y0 + r * 2;
+    if (form === 'owl' && x < 10 && y < 14) continue;
+    if (x < GW) put0(x, y, mix(GREENS[level(n)], screen, 0.35));
+  }
+}
+
+module.exports = {wall};
+},
 'render/build': function (module, require) {
 /* ---------- build: one frame of the pet as pixels ----------
    build(D, f, opts) returns Map(cell index -> color) for frame f (8 per second). opts: {theme, screen, reduced, clip}:
    clip = {name, t, n, gx, gy} plays an event clip (clips.js), t ticks in.
 
-   A frame is drawn in layers, back to front. Every layer gets the same context (see context()): the pet's state,
+   A frame is drawn in layers, back to front, over the wall: the Committed mutation's contribution graph (marks.js). Every layer gets the same context (see context()): the pet's state,
    the theme's figure for this frame (plan, anchors, palette) and the surface to draw on.
      backdrop     the Night Owl's moon, the Shipper's crate (fixed, behind everything)
      trail        the Streaker's fire                          -- from here on, a click reaction moves the creature
      shadow       on the ground, or motes under a flyer
      parts        the theme's shapes, shaded by role, with Polyglot stripes and the Unreal sheen
-     face         eyes and mouth: theme.face(ctx), or the default pixel face
+     ribs         an exhausted or starving pet's ribs (gaunt.js; its body was thinned in figure())
+     face         eyes and mouth: theme.face(ctx), or the default pixel face, then sunken sockets when gaunt
      decor        the stage's own extras: plan.decor(ctx)
      worn, crest  form accessories, crown and the affinity crest over the head
-     orbit, shiny, sick, sleep, reaction fx */
+     orbit, shiny, sick, sleep, reaction fx
+     glitch       a pet about to devolve flickers (on the finished frame) */
 'use strict';
 const {CREST_STAGE, FORM_STAGE, PET} = require('core/rules');
-const {C, mix} = require('render/colors');
+const {C, mix, gray} = require('render/colors');
 const {paint} = require('render/raster');
 const {themeOf} = require('render/themes');
 const {pose} = require('render/pose');
@@ -1093,11 +1408,14 @@ const {drawFace} = require('render/face');
 const {backdrop, trail, worn, crest} = require('render/accessories');
 const {shadow, orbit, shiny, sick, sleep} = require('render/status');
 const {playFx} = require('render/fx');
+const gaunt = require('render/gaunt');
+const {wall} = require('render/marks');
 
 function build(D, f, opts) {
   opts = opts || {};
   const T = themeOf(opts.theme);
   const ctx = context(D, f, opts, T);
+  wall(ctx);
   if (ctx.st === 0 && !T.drawsEgg) { drawEgg(ctx); return ctx.buf; }
   figure(ctx);
   backdrop(ctx);
@@ -1105,7 +1423,9 @@ function build(D, f, opts) {
   trail(ctx);
   shadow(ctx);
   parts(ctx);
+  gaunt.ribs(ctx);
   (T.face || drawFace)(ctx);
+  gaunt.sockets(ctx);
   if (ctx.pl.decor) ctx.pl.decor(ctx);
   worn(ctx);
   crest(ctx);
@@ -1114,6 +1434,7 @@ function build(D, f, opts) {
   sick(ctx);
   sleep(ctx);
   if (ctx.play) playFx(ctx);
+  gaunt.glitch(ctx);
   return ctx.buf;
 }
 
@@ -1121,10 +1442,19 @@ function build(D, f, opts) {
 function context(D, f, opts, T) {
   const screen = opts.screen || T.screen || '#080A0E', motion = !opts.reduced;
   const P = pose(D, f, opts, T), {st, sleeping, mo} = P, has = D.count > 0, mut = D.mutations || {};
-  // shiny pets turn golden, sick ones turn grey-green
-  const tint = c => { let x = c; if (mut.shiny) x = mix(x, C.gold, 0.35); if (D.sick) x = mix(x, C.sick, D.critical ? 0.6 : 0.4); return x; };
+  const lvl = gaunt.level(D, st), cold = st === 0 && has && D.starving;
+  // shiny pets turn golden, sick ones turn grey-green, hungry ones lose their color, a cooling egg turns frosty
+  const tint = c => {
+    let x = c;
+    if (mut.shiny) x = mix(x, C.gold, 0.35);
+    if (D.sick) x = mix(x, C.sick, D.critical ? 0.6 : 0.4);
+    if (lvl) x = gaunt.fade(x, lvl, screen);
+    if (cold) x = mix(mix(x, gray(x), 0.4), C.frost, 0.25);
+    return x;
+  };
   return Object.assign(surface(), {
     D, f, theme: T, st, aff: D.affinity, has, mut, sleeping, motion, screen,
+    gaunt: lvl,         // 0 fed, 1 exhausted, 2 starving (gaunt.js)
     form: st >= FORM_STAGE ? D.form : null,
     mo,                 // motion channels for plans(): bob, walk, flap, sway, alt, phase, rock, blink, look, hatch...
     pose: P.pose,       // the whole body: ox, oy, sq, and face and mouth expressions
@@ -1143,7 +1473,7 @@ function context(D, f, opts, T) {
 
 // The theme's plan for this frame, its anchors, and the palette its parts are shaded with.
 function figure(ctx) {
-  const pl = ctx.theme.plans(ctx.st, ctx.f, ctx.mo);
+  const pl = gaunt.thin(ctx.theme.plans(ctx.st, ctx.f, ctx.mo), ctx.gaunt);
   ctx.pl = pl;
   ctx.A = pl.a = withAnchors(pl.a, pl.parts);
   ctx.M = pl.mouth;
@@ -1158,8 +1488,9 @@ function figure(ctx) {
 // Each part shaded by its role, or in its own color: a color, or one made from the skin, as skin => color.
 // Parts can carry an ornament pattern.
 // Body parts in the affinity color also wear the Polyglot's source stripes and the Unreal sheen.
+// ctx.owner remembers which part is on top in every cell, for the layers that draw on the body (ribs, sockets).
 function parts(ctx) {
-  const {D, f, st, aff, form, motion, skin, pal, screen, tint, put, pl} = ctx;
+  const {D, f, st, aff, form, motion, skin, pal, screen, tint, put, pl} = ctx, owner = ctx.owner = new Map();
   const stripes = form === 'polyglot' && D.srcs30 && D.srcs30.length > 1
     ? (x, y) => mix(PET[D.srcs30[Math.floor(y / 3) % D.srcs30.length]] || skin, skin, 0.35) : null;
   const sheen = aff === 'unreal' && st >= CREST_STAGE ? (x, y) => ((((x - y + (motion ? f * 2 : 0)) % 17) + 17) % 17 < 2 ? mix(skin, '#ffffff', 0.4) : null) : null;
@@ -1168,6 +1499,8 @@ function parts(ctx) {
     const orn = part.pattern ? (x, y) => { const c = part.pattern(x, y); return c ? tint(c) : null; } : null;
     const extra = part.role === 'body' && !part.color ? (x, y) => (sheen && sheen(x, y)) || (stripes && stripes(x, y)) || (orn && orn(x, y)) || null : orn;
     paint(put, part.m, base, screen, extra, part.role === 'core' || part.flat);
+    part.paint = base;
+    for (const k of part.m) owner.set(k, part);
   }
 }
 
@@ -1184,6 +1517,7 @@ const {MAX_STAGE} = require('core/rules');
 const {G, K} = require('render/raster');
 const {themeOf} = require('render/themes');
 const {pose} = require('render/pose');
+const {level, thin} = require('render/gaunt');
 
 const canReact = id => !!themeOf(id).reacts;
 const ANGRY_AT = 6;  // this many clicks in a row (see the widget's combo window) makes it cross
@@ -1209,7 +1543,7 @@ function hitTest(D, f, opts, gx, gy) {
   // undo the clip's own offset and squash
   const x = Math.round(gx - p.ox), y = Math.round(G - (G - (gy - p.oy)) / p.sq);
   if (st === 0 && !T.drawsEgg) { const dx = (x - 32) / 9, dy = (y - (G - 9.5)) / 10.5; return dx * dx + dy * dy <= 1 ? 'egg' : null; }
-  const pl = T.plans(st, f, mo), A = pl.a;
+  const pl = thin(T.plans(st, f, mo), level(D, st)), A = pl.a;
   const zoneAt = (px, py) => {
     for (const e of pl.eyes) if (px >= e.x - 1 && px <= e.x + e.w && py >= e.y - 1 && py <= e.y + e.h) return 'head';
     const k = K(px, py);
@@ -3004,6 +3338,7 @@ function plans(st, f, mo) {
   GitHub profile Action (render.cjs). No dependencies; works in a browser and in Node.
 
   - XP with diminishing returns and a daily soft cap, replayed in time order
+  - hunger: days without coding eat XP, and a pet left at the bottom of its stage devolves
   - 11 stages, each with its own creature body
   - branching forms, locked at the moment each evolution happens
   - rare mutations from your whole history
@@ -3018,10 +3353,11 @@ function plans(st, f, mo) {
 */
 'use strict';
 const {DAY, HOUR, clamp, dayIdx} = require('core/util');
-const {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, isLate} = require('core/rules');
+const {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED, isLate} = require('core/rules');
 const {sessionXP, mult} = require('core/xp');
 const {SESSION_GAP, commitKey, sessionStart, rescanFrom, valid, detectKind, toSessions} = require('core/sessions');
 const {traitScores, traitAt} = require('core/forms');
+const {rateOf: hungerRate, starveAt, hungerAt, starve} = require('core/hunger');
 const {derive, gainFor, statusInfo, statusLine} = require('core/derive');
 const {ciFromRollup, ciFromPipeline, updateCI} = require('core/ci');
 const {Q_REPO, Q_HIST, scanGitHubRepo} = require('core/github');
@@ -3044,10 +3380,10 @@ defineTheme(require('themes/succubus'));
 
 module.exports = {
   // rules
-  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE,
+  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED,
   isLate, clamp, dayIdx,
   // stats from sessions
-  sessionXP, mult, valid, derive, gainFor, traitScores, traitAt, statusInfo, statusLine,
+  sessionXP, mult, valid, derive, gainFor, traitScores, traitAt, statusInfo, statusLine, hungerRate, starveAt, hungerAt, starve,
   SESSION_GAP, sessionStart, rescanFrom, commitKey, detectKind, toSessions,
   ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   // pixels

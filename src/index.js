@@ -3,6 +3,7 @@
   GitHub profile Action (render.cjs). No dependencies; works in a browser and in Node.
 
   - XP with diminishing returns and a daily soft cap, replayed in time order
+  - hunger: days without coding eat XP, and a pet left at the bottom of its stage devolves
   - 11 stages, each with its own creature body
   - branching forms, locked at the moment each evolution happens
   - rare mutations from your whole history
@@ -17,10 +18,11 @@
 */
 'use strict';
 const {DAY, HOUR, clamp, dayIdx} = require('./core/util');
-const {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, isLate} = require('./core/rules');
+const {SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED, isLate} = require('./core/rules');
 const {sessionXP, mult} = require('./core/xp');
 const {SESSION_GAP, commitKey, sessionStart, rescanFrom, valid, detectKind, toSessions} = require('./core/sessions');
 const {traitScores, traitAt} = require('./core/forms');
+const {rateOf: hungerRate, starveAt, hungerAt, starve} = require('./core/hunger');
 const {derive, gainFor, statusInfo, statusLine} = require('./core/derive');
 const {ciFromRollup, ciFromPipeline, updateCI} = require('./core/ci');
 const {Q_REPO, Q_HIST, scanGitHubRepo} = require('./core/github');
@@ -43,10 +45,10 @@ defineTheme(require('./themes/succubus'));
 
 module.exports = {
   // rules
-  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE,
+  DAY, HOUR, SOURCES, SRC, STAGES, MAX_STAGE, CREST_STAGE, FORM_STAGE, FORMS, MUTATIONS, PET, FIX_XP, DAY_SOFT_CAP, OVER_CAP_RATE, HUNGER, MUTATION_DAYS, CROWN_XP, COMMITTED,
   isLate, clamp, dayIdx,
   // stats from sessions
-  sessionXP, mult, valid, derive, gainFor, traitScores, traitAt, statusInfo, statusLine,
+  sessionXP, mult, valid, derive, gainFor, traitScores, traitAt, statusInfo, statusLine, hungerRate, starveAt, hungerAt, starve,
   SESSION_GAP, sessionStart, rescanFrom, commitKey, detectKind, toSessions,
   ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   // pixels

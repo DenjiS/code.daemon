@@ -17,11 +17,12 @@ test('the pet moves on its own while awake, and keeps still under reduced motion
   assert.strictEqual(frames(pet(4), {reduced: true}), 1);
 });
 
-test('evolve plays in every theme on every stage, and ends where it started', () => {
-  for (const t of P.themes()) for (let st = 1; st <= 10; st++) {
-    assert.ok(changes(t.id, st, 'evolve') >= 8, `${t.id} stage ${st}`);
-    const len = P.CLIPS.evolve.len;
-    assert.ok(same(P.build(pet(st), 30, {theme: t.id, clip: {name: 'evolve', t: len + 5}}), P.build(pet(st), 30, {theme: t.id, clip: {name: 'evolve', t: len - 1}})), 'clamped to its last tick');
+test('evolve and devolve play in every theme on every stage, and end where they started', () => {
+  for (const name of ['evolve', 'devolve']) for (const t of P.themes()) for (let st = name === 'evolve' ? 1 : 0; st <= 10; st++) {
+    const D = name === 'devolve' ? {energy: 2, starving: true} : {};  // a pet that devolves is a starving one
+    assert.ok(changes(t.id, st, name, D) >= 8, `${name}: ${t.id} stage ${st}`);
+    const len = P.CLIPS[name].len;
+    assert.ok(same(P.build(pet(st, D), 30, {theme: t.id, clip: {name, t: len + 5}}), P.build(pet(st, D), 30, {theme: t.id, clip: {name, t: len - 1}})), 'clamped to its last tick');
   }
 });
 

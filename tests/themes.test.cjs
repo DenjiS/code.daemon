@@ -15,7 +15,7 @@ test('the themes, in picker order', () => {
 
 test('every theme draws every stage, form and state on the screen, with something to see', () => {
   const forms = [null, 'owl', 'shipper', 'streaker', 'guardian', 'debugger', 'vibe', 'polyglot'];
-  const states = [{}, {energy: 10}, {sick: true, critical: true, mood: 10}, {count: 0}, {mutations: {shiny: true, crowned: true, cursed: true}}];
+  const states = [{}, {energy: 10}, {energy: 1, starving: true, fading: true}, {sick: true, critical: true, mood: 10}, {count: 0}, {mutations: {shiny: true, crowned: true, cursed: true, committed: true}}];
   for (const t of P.themes()) for (let st = 0; st <= 10; st++) for (const form of forms) for (const s of states) for (const aff of ['github', 'gitlab', 'local', 'unity', 'unreal', null]) {
     const b = P.build(pet(st, {form, affinity: aff, srcs30: ['github', 'local'], ...s}), 13, {theme: t.id});
     assert.ok(b.size > 40, `${t.id} stage ${st} ${form} draws ${b.size} cells`);

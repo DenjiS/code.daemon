@@ -92,10 +92,11 @@ const SECTIONS = [
   {id: 'mutations', title: 'w.mu', peek: (D, c) => { const m = Object.keys(D.mutations).filter(k => D.mutations[k]); return m.length ? m.map(k => c.n.mut(k)).join(', ') : c.T('w.mu.none'); }, body: (D, c) => [
     p$(c.T('w.mu.p1')),
     ul$(Object.keys(MUTATIONS).map(k => `<b>${esc(c.n.mut(k))}</b>: ${esc(c.n.mutRule(k))}`)),
-    bar$(esc(c.n.mut('shiny')), D.maxStreak / 30, c.T('w.mu.days', {n: Math.min(D.maxStreak, 30)}), D.mutations.shiny),
+    bar$(esc(c.n.mut('shiny')), D.year.streak / 30, c.T('w.mu.days', {n: Math.min(D.year.streak, 30)}), D.mutations.shiny),
     bar$(esc(c.n.mut('cursed')), D.mutations.cursed ? 1 : 0, c.T(D.mutations.cursed ? 'w.mu.yes' : 'w.mu.no'), D.mutations.cursed),
-    bar$(esc(c.n.mut('crowned')), D.commits / 1000, `${c.num(Math.min(D.commits, 1000))}/${c.num(1000)}`, D.mutations.crowned),
-    p$(esc(c.T('w.mu.p2', {shiny: c.n.mut('shiny'), cursed: c.n.mut('cursed'), crowned: c.n.mut('crowned')}))),
+    bar$(esc(c.n.mut('crowned')), D.year.xp / P.CROWN_XP, `${c.num(Math.min(D.year.xp, P.CROWN_XP))}/${c.num(P.CROWN_XP)}`, D.mutations.crowned),
+    bar$(esc(c.n.mut('committed')), D.year.commits / P.COMMITTED, `${c.num(Math.min(D.year.commits, P.COMMITTED))}/${c.num(P.COMMITTED)}`, D.mutations.committed),
+    p$(esc(c.T('w.mu.p2', {shiny: c.n.mut('shiny'), cursed: c.n.mut('cursed'), crowned: c.n.mut('crowned'), committed: c.n.mut('committed')}))),
   ]},
 
   {id: 'streak', title: 'w.sk', peek: (D, c) => c.T('w.days', {n: D.streak}), body: (D, c) => [
@@ -113,6 +114,24 @@ const SECTIONS = [
       rows$([c.T('w.en.hSes'), c.T('vital.energy')], [['ex0', 50, 0], ['ex0', 90, 0], ['ex0', 180, 0], ['ex1', 90, 24], ['ex3', 90, 72]].map(([k, m, h]) => [c.T('w.en.' + k, {min: m}), energyFor(m, h, c.now)])),
       p$(c.T('w.en.p2')),
       now$(c.T('w.en.now'), c.num(W)),
+    ];
+  }},
+
+  {id: 'hunger', title: 'w.hu', peek: (D, c) => (!D.count ? '—' : c.T(D.fading ? 'w.hu.fading' : D.starving ? 'w.hu.starving' : 'w.hu.fed')), body: (D, c) => {
+    const H = P.HUNGER, spell = D.losses.find(l => l.ongoing), lost = D.losses.reduce((a, l) => a + l.xp, 0);
+    const rates = STAGES.map((s, i) => [i, esc(c.n.stage(i)), c.num(P.hungerRate(i)), i < MAX_STAGE ? c.T('w.days', {n: Math.round((STAGES[i + 1].xp - s.xp) / P.hungerRate(i))}) : '—']);
+    return [
+      p$(c.T('w.hu.p1', {grace: H.grace, energy: H.energy})),
+      p$(c.T('w.hu.p2', {ramp: H.ramp, share: Math.round(H.share * 100), cap: H.cap})),
+      rows$(['', c.T('w.st.hStage'), c.T('w.hu.hRate'), c.T('w.hu.hEmpty')], rates, D.stage),
+      p$(c.T('w.hu.p3', {floor: H.floor, fall: H.fall})),
+      p$(c.T('w.hu.p4')),
+      D.count && D.starveAt ? now$(c.T(D.starving ? 'w.hu.since' : 'w.hu.from'), c.when(D.starveAt)) : '',
+      D.drain ? now$(c.T('w.hu.rate'), `−${c.num(D.drain)} XP`) : '',
+      D.fading ? now$(c.T('w.hu.fall'), esc(c.T('w.hu.fallV', {stage: c.n.stage(D.stage - 1), when: c.when(D.fallAt)}))) : '',
+      spell ? now$(c.T('w.hu.spell'), `−${c.num(spell.xp)} XP`) : '',
+      lost && (!spell || lost > spell.xp) ? now$(c.T('w.hu.lost'), `−${c.num(lost)} XP`) : '',
+      D.peak > D.stage ? now$(c.T('w.hu.peak'), esc(c.n.stage(D.peak))) : '',
     ];
   }},
 
@@ -156,7 +175,7 @@ const SECTIONS = [
 
   {id: 'status', title: 'w.sl', peek: () => '', body: (D, c) => [
     p$(c.T('w.sl.p1')),
-    `<ol>${[1, 2, 3, 4, 5, 6].map(i => `<li>${c.T('w.sl.' + i)}</li>`).join('')}</ol>`,
+    `<ol>${['1', 'cool', 'fade', 'starve', '2', '3', '4', '5', '6'].map(i => `<li>${c.T('w.sl.' + i)}</li>`).join('')}</ol>`,
   ]},
 
   {id: 'scans', title: 'w.sc', peek: () => '', body: (D, c) => [p$(c.T('w.sc.p1')), p$(c.T('w.sc.p2')), p$(c.T('w.sc.p3'))]},

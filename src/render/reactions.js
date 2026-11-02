@@ -8,6 +8,7 @@ const {MAX_STAGE} = require('../core/rules');
 const {G, K} = require('./raster');
 const {themeOf} = require('./themes');
 const {pose} = require('./pose');
+const {level, thin} = require('./gaunt');
 
 const canReact = id => !!themeOf(id).reacts;
 const ANGRY_AT = 6;  // this many clicks in a row (see the widget's combo window) makes it cross
@@ -33,7 +34,7 @@ function hitTest(D, f, opts, gx, gy) {
   // undo the clip's own offset and squash
   const x = Math.round(gx - p.ox), y = Math.round(G - (G - (gy - p.oy)) / p.sq);
   if (st === 0 && !T.drawsEgg) { const dx = (x - 32) / 9, dy = (y - (G - 9.5)) / 10.5; return dx * dx + dy * dy <= 1 ? 'egg' : null; }
-  const pl = T.plans(st, f, mo), A = pl.a;
+  const pl = thin(T.plans(st, f, mo), level(D, st)), A = pl.a;
   const zoneAt = (px, py) => {
     for (const e of pl.eyes) if (px >= e.x - 1 && px <= e.x + e.w && py >= e.y - 1 && py <= e.y + e.h) return 'head';
     const k = K(px, py);
