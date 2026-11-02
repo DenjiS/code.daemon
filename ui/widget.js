@@ -143,7 +143,7 @@ function paint() {
   if (!W || !H) return;
   const GW = P.GW, GH = P.GH, cell = W / GW, gap = Math.max(1, cell * 0.14), r = cell - gap;
   const tc = P.themeColors(state.theme), screen = tc ? tc.screen : theme.screen, dot = tc ? tc.dot : theme.dot;
-  const buf = P.build(D, frame, {screen, reduced, theme: state.theme});
+  const buf = P.build(D, frame, {screen, reduced, theme: state.theme, react: reactNow()});
   const body = PET[D.affinity || 'none'];
   ctx.shadowBlur = 0;
   ctx.fillStyle = screen; ctx.fillRect(0, 0, W, H);
@@ -490,7 +490,65 @@ function startDrag(e) {
   e.preventDefault(); post({type:'drag'});
 }
 $('#bar').addEventListener('mousedown', startDrag);
-$('#screen').addEventListener('mousedown', startDrag);
+
+/* ---------- poking the pet ----------
+   On the screen a press that stays put is a click on the pet; one that moves a few pixels drags the window,
+   as before. Themes without reactions (P.canReact) drag straight away. Reactions are cosmetic only. */
+const DRAG_PX = 4, COMBO_MS = 2500, TICK_MS = 125;  // TICK_MS: one animation frame at 8 fps
+let press = null, react = null, lastReact = null, pokes = [], hoverCell = '';
+function cellAt(e) {
+  const r = canvas.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const gx = Math.floor((e.clientX - r.left) / r.width * P.GW), gy = Math.floor((e.clientY - r.top) / r.height * P.GH);
+  return gx >= 0 && gy >= 0 && gx < P.GW && gy < P.GH ? [gx, gy] : null;
+}
+function reactNow() {
+  if (!react) return null;
+  const t = Math.floor((performance.now() - react.start) / TICK_MS);
+  if (t >= P.REACTIONS[react.kind].len) { react = null; return null; }
+  return {kind: react.kind, t, n: react.n, gx: react.gx, gy: react.gy};
+}
+function zoneAt(e) {
+  const c = cellAt(e);
+  return c ? {cell: c, zone: P.hitTest(D, frame, {reduced, theme: state.theme, react: reactNow()}, c[0], c[1])} : null;
+}
+function poke(e) {
+  const hit = zoneAt(e);
+  if (!hit || hit.zone === undefined) return;
+  const now = performance.now();
+  if (react && (react.kind === 'angry' || react.kind === 'grumpy')) return;  // let it fume
+  pokes = pokes.filter(t => now - t < COMBO_MS); pokes.push(now);
+  const kind = P.reactionFor(D, hit.zone, pokes.length);
+  if (kind === 'angry' || kind === 'grumpy') pokes = [];
+  // n: a streak of the same reaction (a third pat in a row blushes)
+  const n = lastReact && lastReact.kind === kind && now - lastReact.start < COMBO_MS ? lastReact.n + 1 : 1;
+  react = lastReact = {kind, start: now, n, gx: hit.cell[0], gy: hit.cell[1]};
+  paint();
+}
+$('#screen').addEventListener('mousedown', e => {
+  if (e.button !== 0 || e.target.closest('button,input,select,a,label')) return;
+  if (!P.canReact(state.theme)) return startDrag(e);
+  e.preventDefault();
+  press = {x: e.clientX, y: e.clientY};
+});
+window.addEventListener('mousemove', e => {
+  if (press) {
+    if (!(e.buttons & 1)) press = null;  // released outside the window
+    else if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_PX) { press = null; post({type: 'drag'}); }
+    return;
+  }
+  if (!P.canReact(state.theme) || !(e.target.closest && e.target.closest('#screen'))) { if (hoverCell) { hoverCell = ''; canvas.style.cursor = ''; } return; }
+  const c = cellAt(e), key = c ? c + '|' + frame : '';
+  if (key === hoverCell) return;
+  hoverCell = key;
+  const hit = c && zoneAt(e);
+  canvas.style.cursor = hit && hit.zone ? 'pointer' : '';
+});
+window.addEventListener('mouseup', e => {
+  if (!press || e.button !== 0) return;
+  press = null;
+  poke(e);
+});
 
 /* ---------- feed ---------- */
 function renderSrcs() {

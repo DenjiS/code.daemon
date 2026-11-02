@@ -137,3 +137,26 @@ test('switching the interface language translates the page, the tray menu and th
     assert.ok($('#gh-clear'), 'the Disconnect button survives the switch');
   } finally { w.close(); }
 });
+
+test('on the pet screen a press that stays put is a click, one that moves drags; other themes drag at once', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  const save = {v: 2, name: 'dmn', theme: 'classic', manual: [], auto: [], repos: [], ci: {}, events: [], lastScan: {gh: Date.now(), gl: 0}, overrides: {}};
+  const {w, host} = boot(save, {}, Date.now());
+  try {
+    await wait(300);
+    const scr = w.document.querySelector('#screen'), canvas = w.document.querySelector('#pet');
+    canvas.getBoundingClientRect = () => ({left: 0, top: 0, width: 256, height: 192, right: 256, bottom: 192});
+    const ev = (el, type, x, y, buttons) => el.dispatchEvent(new w.MouseEvent(type, {bubbles: true, cancelable: true, button: 0, buttons, clientX: x, clientY: y}));
+    const drags = () => host.posted.filter(m => m && m.type === 'drag').length;
+    ev(scr, 'mousedown', 128, 120, 1); ev(w.document, 'mousemove', 129, 121, 1); ev(w.document, 'mouseup', 129, 121, 0);
+    assert.strictEqual(drags(), 0, 'a click does not drag');
+    ev(scr, 'mousedown', 128, 120, 1); ev(w.document, 'mousemove', 140, 120, 1);
+    assert.strictEqual(drags(), 1, 'moving while pressed drags');
+    ev(w.document, 'mouseup', 140, 120, 0);
+  } finally { w.close(); }
+  const other = boot({...save, theme: 'derp'}, {}, Date.now());
+  try {
+    await wait(300);
+    other.w.document.querySelector('#screen').dispatchEvent(new other.w.MouseEvent('mousedown', {bubbles: true, cancelable: true, button: 0, buttons: 1}));
+    assert.strictEqual(other.host.posted.filter(m => m && m.type === 'drag').length, 1, 'themes without reactions drag on press');
+  } finally { other.w.close(); }
+});
