@@ -159,5 +159,5 @@ I18n.add('de', {
   'w.sc.p2': 'Ein Repo, dessen Scan fehlschlägt, behält seine gespeicherten Sessions bis zum nächsten Scan. Tokens werden verschlüsselt und nur für deinen Windows-Benutzer gespeichert.',
   'w.sc.p3': 'Die Karte fürs GitHub-Profil baut eine Action mit derselben Engine; Namen privater Repos tauchen darin nie auf.',
   'w.th': 'Themen', 'w.th.cur': '(aktuell)', 'w.th.p2': 'Auswahl unter Optionen → Thema.',
-  'w.th.p1': 'Themen ändern nur das Aussehen: XP, Stufen, Formen, Kamm und Werte sind in jedem Thema gleich. In manchen Themen reagiert das Haustier außerdem auf Klicks.',
+  'w.th.p1': 'Themen ändern nur das Aussehen: XP, Stufen, Formen, Kamm und Werte sind in jedem Thema gleich. In jedem Thema reagiert das Haustier auf Klicks.',
 });

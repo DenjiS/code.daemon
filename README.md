@@ -94,7 +94,7 @@ Succubus follows your affinity: skin in its color, wings, hair and outfit in dar
 
 ![Succubus stages: heart egg, imp slime, bat imp, chibi imp, chibi succubus, young succubus, lamia, succubus, flying succubus, succubus queen, ascended](docs/succubus.png)
 
-Classic, Demonic and Succubus answer clicks: pat the head, tickle the belly, poke a leg, a tail or a wing, and the pet reacts. Drag the screen to move the widget as before.
+Every theme answers clicks: pat the head, tickle the belly, poke a leg, a tail or a wing, and the pet reacts; when it evolves it jumps for joy in a burst of stars. Drag the screen to move the widget as before.
 
 ### Adding a theme
 

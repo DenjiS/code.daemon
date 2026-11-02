@@ -159,5 +159,5 @@ I18n.add('pt', {
   'w.sc.p2': 'Um repositório que falhou na varredura mantém as sessões salvas até a próxima. Os tokens ficam guardados criptografados, só para o seu usuário do Windows.',
   'w.sc.p3': 'O cartão do perfil do GitHub é gerado por uma Action com o mesmo motor; nomes de repositórios privados nunca aparecem nele.',
   'w.th': 'Temas', 'w.th.cur': '(atual)', 'w.th.p2': 'Escolha um em Ajustes → Tema.',
-  'w.th.p1': 'Os temas só mudam a aparência: XP, estágios, formas, crista e sinais vitais são iguais em todos. Em alguns temas o bichinho também reage quando você clica nele.',
+  'w.th.p1': 'Os temas só mudam a aparência: XP, estágios, formas, crista e sinais vitais são iguais em todos. Em todos os temas o bichinho reage quando você clica nele.',
 });

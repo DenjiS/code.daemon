@@ -1,5 +1,5 @@
 /* ---------- clicks ----------
-   For themes with reacts: true (Classic, Demonic and Succubus): their parts say which zone they are. The widget asks
+   For themes with reacts: true (every built-in theme): their parts say which zone they are. The widget asks
    hitTest() what a click touched, picks a clip with reactionFor(), and plays it: opts.clip = {name, t, n, gx, gy} to
    build() for the clip's len ticks (n: a streak of the same reaction, gx, gy: the cell clicked). Clips are in clips.js;
    reactions are cosmetic and never change stats. */

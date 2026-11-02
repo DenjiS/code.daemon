@@ -159,5 +159,5 @@ I18n.add('es', {
   'w.sc.p2': 'Un repo que no se pudo escanear conserva sus sesiones guardadas hasta el siguiente escaneo. Los tokens se guardan cifrados solo para tu usuario de Windows.',
   'w.sc.p3': 'La tarjeta del perfil de GitHub la genera una Action con el mismo motor; los nombres de los repos privados nunca aparecen en ella.',
   'w.th': 'Temas', 'w.th.cur': '(actual)', 'w.th.p2': 'Elige uno en Ajustes → Tema.',
-  'w.th.p1': 'Los temas solo cambian el aspecto: XP, etapas, formas, cresta y constantes son iguales en todos. En algunos temas la mascota también reacciona cuando haces clic en ella.',
+  'w.th.p1': 'Los temas solo cambian el aspecto: XP, etapas, formas, cresta y constantes son iguales en todos. En todos los temas la mascota reacciona cuando haces clic en ella.',
 });

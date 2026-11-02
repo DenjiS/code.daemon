@@ -22,8 +22,10 @@ test('hitTest finds head, body, limbs, tail and wings, and misses empty screen',
 test('only themes with reacts: true answer clicks; the others answer undefined', () => {
   for (const theme of P.themes().filter(t => !t.reacts).map(t => t.id)) assert.strictEqual(P.hitTest(pet(4), 8, {theme}, 32, 28), undefined, theme);
   assert.strictEqual(P.canReact('classic'), true);
-  assert.strictEqual(P.canReact('derp'), false);
-  assert.deepStrictEqual(P.themes().filter(t => t.reacts).map(t => t.id), ['classic', 'demonic', 'succubus']);
+  P.defineTheme({id: 'still', name: 'Still', plans: () => ({parts: [], eyes: [], mouth: null})});
+  assert.strictEqual(P.canReact('still'), false);
+  assert.strictEqual(P.hitTest(pet(4), 8, {theme: 'still'}, 32, 28), undefined);
+  assert.deepStrictEqual(P.themes().filter(t => t.reacts).map(t => t.id), ['classic', 'derp', 'slavic', 'asian', 'demonic', 'succubus'], 'every built-in theme');
 });
 
 test('reactionFor: zone, sleep, sickness, egg and a streak of clicks', () => {
@@ -41,7 +43,7 @@ test('reactionFor: zone, sleep, sickness, egg and a streak of clicks', () => {
   assert.strictEqual(P.reactionFor(pet(0), 'egg', 1), 'wobble');
 });
 
-const REACTING = P.themes().filter(t => t.reacts).map(t => t.id);
+const REACTING = ['classic', 'derp', 'slavic', 'asian', 'demonic', 'succubus'];
 const REACTIONS = ['pat', 'tickle', 'wave', 'hop', 'tail', 'flutter', 'look', 'angry', 'grumpy', 'stir', 'wobble', 'flinch'];
 
 test('every reaction draws on every stage of every theme that reacts, and changes the picture', () => {

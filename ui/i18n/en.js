@@ -111,5 +111,5 @@ I18n.add('en', {
   'w.sc.p2': 'A repo that fails to scan keeps its saved sessions until the next scan. Tokens are stored encrypted for your Windows user only.',
   'w.sc.p3': 'The GitHub profile card is built by an Action with the same engine; private repo names never appear in it.',
   'w.th': 'Themes', 'w.th.cur': '(current)', 'w.th.p2': 'Pick one in Setup → Theme.',
-  'w.th.p1': 'Themes only change the look: XP, stages, forms, crest and vitals are the same in every theme. In some themes the pet also reacts when you click it.',
+  'w.th.p1': 'Themes only change the look: XP, stages, forms, crest and vitals are the same in every theme. In every theme the pet reacts when you click it.',
 });

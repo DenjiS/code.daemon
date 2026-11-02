@@ -8,7 +8,8 @@ let JSDOM = null;
 try { ({JSDOM} = require('jsdom')); } catch (e) { /* skipped below */ }
 const UI = path.join(ROOT, 'ui');
 
-function boot(save, repos, now) {
+// extra: code run right after pet-core.js, before the widget starts (to define a theme, say)
+function boot(save, repos, now, extra) {
   const page = fs.readFileSync(path.join(UI, 'widget.html'), 'utf8');
   const scripts = [...page.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
   const html = page.replace(/<script[^>]*><\/script>/g, '');
@@ -36,7 +37,7 @@ function boot(save, repos, now) {
     ok({repository: {isPrivate: false, object: {entries: []}, releases: {nodes: []}, refs: {nodes: r.ci.map(b => ({name: b.ref,
       target: {committedDate: new Date(now - 30 * MIN).toISOString(), statusCheckRollup: {state: b.s}, history: {pageInfo: {hasNextPage: false}, nodes}}}))}}});
   }}};
-  for (const f of scripts) w.eval(fs.readFileSync(path.join(UI, f), 'utf8'));
+  for (const f of scripts) { w.eval(fs.readFileSync(path.join(UI, f), 'utf8')); if (f === 'pet-core.js' && extra) w.eval(extra); }
   return {w, host, tell: m => host.listener({data: m})};
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -153,7 +154,8 @@ test('on the pet screen a press that stays put is a click, one that moves drags;
     assert.strictEqual(drags(), 1, 'moving while pressed drags');
     ev(w.document, 'mouseup', 140, 120, 0);
   } finally { w.close(); }
-  const other = boot({...save, theme: 'derp'}, {}, Date.now());
+  const still = "PetCore.defineTheme({id: 'still', name: 'Still', plans: () => ({parts: [], eyes: [], mouth: null})});";  // a theme without reactions
+  const other = boot({...save, theme: 'still'}, {}, Date.now(), still);
   try {
     await wait(300);
     other.w.document.querySelector('#screen').dispatchEvent(new other.w.MouseEvent('mousedown', {bubbles: true, cancelable: true, button: 0, buttons: 1}));
