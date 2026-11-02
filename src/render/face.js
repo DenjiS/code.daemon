@@ -1,6 +1,6 @@
 /* ---------- face: eyes and mouth ----------
    The default face draws the plan's pixel eyes ({x, y, w, h}, or a visor) and pixel mouth. It blinks, sleeps, shows
-   mood and sickness, and swaps in an expression while a click reaction plays (ctx.rp.face, ctx.rp.mouth).
+   mood and sickness, and swaps in an expression while a clip asks for one (ctx.pose.face, ctx.pose.mouth).
    A theme with a face of its own sets face(ctx) and can reuse drawEye() and drawMouth() from here, as Derpy does. */
 'use strict';
 const {CREST_STAGE} = require('../core/rules');
@@ -16,7 +16,7 @@ const eyeColor = (ctx, i) => ctx.mut.cursed && i === ctx.pl.eyes.length - 1 ? C.
 
 function drawEye(ctx, e, i, ec) {
   const {put, D, mut, sleeping, blink, form, happy, tired, skin, screen, eye} = ctx;
-  if (ctx.rp.face && expressionEye(ctx, e, i, ec)) return;
+  if (ctx.pose.face && expressionEye(ctx, e, i, ec)) return;
   if (e.visor) {
     const vc = D.sick ? C.alarm : mut.cursed ? C.curse : '#FFFFFF';
     for (let k = 0; k < e.w; k++) put(e.x + k, e.y, (sleeping || blink) && k % 2 ? eye : vc);
@@ -38,7 +38,7 @@ function drawEye(ctx, e, i, ec) {
 // M: {x, y, w} and optionally color (painted lips instead of a dark line), fangs, tooth, teeth (a color), tongue
 function drawMouth(ctx, M) {
   const {put, D, aff, st, motion, mo, sleeping, happy, pal, eye} = ctx, lip = M.color ? ctx.tint(M.color) : eye;
-  if (ctx.rp.mouth) { expressionMouth(ctx, M, ctx.rp.mouth); return; }
+  if (ctx.pose.mouth) { expressionMouth(ctx, M, ctx.pose.mouth); return; }
   if (aff === 'local' && st >= CREST_STAGE && !D.sick) {  // a shell prompt: >_
     put(M.x - 1, M.y - 1, eye); put(M.x, M.y, eye); put(M.x - 1, M.y + 1, eye);
     if (!motion || mo.alt) { put(M.x + 1, M.y + 1, eye); put(M.x + 2, M.y + 1, eye); }
@@ -52,13 +52,15 @@ function drawMouth(ctx, M) {
   if (M.tongue && !sleeping) { put(M.x + M.w, M.y, C.tongue); put(M.x + M.w + 1, M.y - 1, C.tongue); put(M.x + M.w + 1, M.y + 1, C.tongue); }
 }
 
-/* ---- expressions while a click reaction plays ---- */
+/* ---- expressions while a clip plays ---- */
 function expressionEye(ctx, e, i, ec) {
-  const {put, react: RX, rt, skin, eye, pl} = ctx;
-  const face = ctx.rp.face, two = pl.eyes.length === 2, left = !two || i === 0, x = e.x, y = e.y, w = e.w, h = e.h;
+  const {put, play, ct, skin, eye, pl} = ctx;
+  // where the eyes look: at the click, or straight ahead for a clip that was not a click
+  const gx = play && play.gx !== undefined ? play.gx : e.x + e.w / 2, gy = play && play.gy !== undefined ? play.gy : e.y;
+  const face = ctx.pose.face, two = pl.eyes.length === 2, left = !two || i === 0, x = e.x, y = e.y, w = e.w, h = e.h;
   if (e.visor) {
-    const vc = face === 'angry' ? C.alarm : face === 'giggle' ? (rt & 1 ? C.gem : '#FFFFFF') : face === 'joy' ? mix(C.gem, '#FFFFFF', 0.45) : '#FFFFFF';
-    const sx = face === 'look' ? Math.sign(RX.gx - (x + w / 2)) : 0;
+    const vc = face === 'angry' ? C.alarm : face === 'giggle' ? (ct & 1 ? C.gem : '#FFFFFF') : face === 'joy' ? mix(C.gem, '#FFFFFF', 0.45) : '#FFFFFF';
+    const sx = face === 'look' ? Math.sign(gx - (x + w / 2)) : 0;
     for (let k = 0; k < w; k++) put(x + k + sx, y, face === 'joy' && k === 2 ? eye : face === 'peek' && k > 2 ? eye : vc);
     if (face === 'wow') for (let k = 1; k < w - 1; k++) put(x + k, y - 1, vc);
     return true;
@@ -68,7 +70,7 @@ function expressionEye(ctx, e, i, ec) {
     case 'joy': {  // closed, curved up: ^ ^
       if (w >= 2) { put(x - 1, y + 1, ec); put(x, y, ec); put(x + w - 1, y, ec); put(x + w, y + 1, ec); }
       else { put(x - 1, y + 1, ec); put(x, y, ec); put(x + 1, y + 1, ec); }
-      if (RX.n >= 3) {  // blush after a few pats
+      if (play && play.n >= 3) {  // blush after a few pats
         const bc = mix(C.gem, skin, 0.35), bx = two ? (left ? x - 2 : x + w) : x - 1;
         put(bx, y + 2, bc); put(bx + 1, y + 2, bc);
       }
@@ -83,7 +85,7 @@ function expressionEye(ctx, e, i, ec) {
       hole(x, y - 1, w + 1, h + 1); put(x, y - 1, '#FFFFFF');
       return true;
     case 'look': {  // eyes follow the click
-      const sx = Math.sign(Math.round(RX.gx - ctx.transform.ox) - x), sy = Math.abs(RX.gy - y) > 4 ? Math.sign(RX.gy - y) : 0;
+      const sx = Math.sign(Math.round(gx - ctx.transform.ox) - x), sy = Math.abs(gy - y) > 4 ? Math.sign(gy - y) : 0;
       hole(x + sx, y + sy, w, h);
       return true;
     }

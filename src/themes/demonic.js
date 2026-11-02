@@ -50,7 +50,7 @@ function plans(st, f, mo) {
 
   switch (st) {
     case 0: { // OBSIDIAN EGG: black glass veined with lava; it rocks now and then, and the crack glows
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       main = S.obsidian;
       const b = part('body', {zone: 'egg', pattern: lavaVeins(wob)}); eggShape(b, ex, cy);

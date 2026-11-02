@@ -120,7 +120,7 @@ function plans(st, f, mo) {
 
   switch (st) {
     case 0: { // HEART EGG: an egg in the affinity color, dotted with pink, that rocks now and then
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       const b = part('body', {zone: 'egg', pattern: (x, y) => ((x - wob) * 5 + y * 3) % 9 === 0 ? PINK : null}); eggShape(b, ex, cy);
       const h = part('core', {zone: 'egg', color: PINK, flat: true}); heart(h, ex, cy - 1, true);

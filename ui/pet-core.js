@@ -475,8 +475,8 @@ module.exports = {GW, GH, G, K, px, ellipse, ring, poly, limb, chain, carve, pai
      screen, dot   its own screen and dot-grid colors (optional; otherwise the widget's)
      bodies    11 creature names, one per stage (optional; otherwise STAGES[st].body)
 
-     plans(st, f, mo)  the creature for stage st at frame f, moving as mo says (motionOf in reactions.js: bob, walk,
-                       flap, sway, alt, phase, hatch). Returns a figure {parts, eyes, mouth, a, main?, decor?}:
+     plans(st, f, mo)  the creature for stage st at frame f, moving as mo says (the motion channels of the playing clips,
+                       pose.js: bob, walk, flap, sway, alt, phase, rock, blink, look; and hatch, has, sleeping). Returns a figure {parts, eyes, mouth, a, main?, decor?}:
                          parts  shapes in drawing order, from partList() in figure.js: part(role, {zone, color, pattern, flat})
                                 role picks the shading: body, limb, far, belly, membrane, horn, core, eyeWhite.
                                 color: its own color instead of the role's, or skin => color to derive it from the skin
@@ -491,6 +491,7 @@ module.exports = {GW, GH, G, K, px, ellipse, ring, poly, limb, chain, carve, pai
      face(ctx)  draws the eyes and mouth itself, instead of the default pixel face (Derpy's googly eyes)
      drawsEgg   plans() draws stage 0 too (otherwise the default egg is used)
      reacts     answers clicks: its parts carry zones (see reactions.js)
+     clips      its own versions of clips, by name (see clips.js), e.g. {pat: {len: 12, face: 'joy', fx: 'hearts'}}
 
    ctx, the context every layer and hook gets, is described in build.js. */
 'use strict';
@@ -522,119 +523,123 @@ const themeColors = id => { const T = themeOf(id); return T.screen ? {screen: T.
 
 module.exports = {defineTheme, themes, hasTheme, themeOf, stageBody, themeColors};
 },
-'render/reactions': function (module, require) {
-/* ---------- click reactions ----------
-   For themes with reacts: true (Classic, Demonic and Succubus). The widget asks hitTest() what a click touched, picks a reaction
-   with reactionFor(), and then passes opts.react = {kind, t, n, gx, gy} to build() for REACTIONS[kind].len frames
-   (t counts 8 fps ticks from the click). Reactions are cosmetic: they never change stats.
-   motionOf() also gives every drawn theme its idle motion (bob, walk, flap, sway), with or without a reaction. */
-'use strict';
-const {clamp, own} = require('core/util');
-const {STAGES, MAX_STAGE} = require('core/rules');
-const {G, K} = require('render/raster');
-const {themeOf} = require('render/themes');
+'render/clips': function (module, require) {
+/* ---------- clips: animation as data ----------
+   A clip says what the creature does over time, as channels. Each channel is a constant, an array indexed by the tick,
+   or a function of the tick (one tick = one frame, 8 per second). Channels a clip leaves out keep their default.
 
-const canReact = id => !!themeOf(id).reacts;
-const REACTIONS = {
-  pat: {len: 16}, tickle: {len: 14}, wave: {len: 14}, hop: {len: 10}, tail: {len: 12}, flutter: {len: 14},
-  look: {len: 16}, angry: {len: 20}, stir: {len: 12}, grumpy: {len: 16}, wobble: {len: 8}, flinch: {len: 8},
+     body       ox, oy     shift the whole creature, in cells          (default 0)
+                sq         squash it toward the ground, 1 = none     (default 1)
+     motion     bob, walk, flap, sway, alt   0 or 1: the phases plans() animate with
+                phase      a smooth angle for slithering and floating
+                rock       the egg's sideways rock, -1..1
+                blink      eyes shut for this frame
+                look       which way googly pupils wander, 0..3
+     face       face       an eye expression: joy, giggle, wow, look, angry, peek (see face.js)
+                mouth      a mouth expression: smile, frown, open, o
+     fx         the name of an effect in fx.js, or fx(ctx, t) drawing one over the creature
+
+   A base clip loops for as long as a state lasts (idle, weak, sleep); an event clip plays once on top of it, for len
+   ticks, and its channels win. Under reduced motion only the face and fx of an event clip play, and the base is still.
+   Themes can replace a clip with their own version: theme.clips = {pat: {...}}. */
+'use strict';
+const {own} = require('core/util');
+
+// flips between 0 and 1 every n ticks
+const toggle = n => t => Math.floor(t / n) & 1;
+// -1, 1, -1, 1... for the first n ticks, then 0: a shake
+const shake = n => t => (t < n ? (t & 1 ? 1 : -1) : 0);
+
+/* base clips: what the creature does on its own */
+const IDLE = {
+  loop: true, bob: toggle(4), walk: toggle(4), flap: toggle(4), sway: toggle(8), alt: toggle(2), phase: t => t * 0.4,
+  look: t => Math.floor(t / 4) & 3,
+  blink: t => t % 41 < 1 || t % 113 === 60,                                  // twice in a while, out of step
+  rock: t => { const w = t % 48 - 43; return w > 0 ? [0, 1, -1, 1, 0][w] : 0; },  // an egg rocks every 6 seconds
 };
-const ANGRY_AT = 6;  // this many clicks in a row (see the widget's combo window) makes it cross
-const BY_ZONE = {head: 'pat', body: 'tickle', arm: 'wave', legs: 'hop', tail: 'tail', wing: 'flutter'};
-// combo: how many clicks landed in quick succession, this one included
-function reactionFor(D, zone, combo) {
-  const st = Math.min(D.stage, MAX_STAGE), sleeping = D.count > 0 && st > 0 && D.energy < 20;
-  if (st === 0) return 'wobble';
-  if (sleeping) return combo >= 3 ? 'grumpy' : 'stir';
-  if (combo >= ANGRY_AT) return 'angry';
-  if (!zone) return 'look';
-  if (D.sick) return zone === 'head' ? 'pat' : 'flinch';  // too poorly to hop or show off
-  return BY_ZONE[zone] || 'tickle';
+const BASE = {
+  idle: IDLE,
+  weak: Object.assign({}, IDLE, {bob: 0}),                                   // critical: too weak to bounce
+  sleep: Object.assign({}, IDLE, {bob: 0, walk: 0, flap: 0, sway: 0}),
+};
+
+/* event clips: reactions to clicks (see reactionFor in reactions.js) and the evolution */
+const CLIPS = {
+  pat: {len: 16, face: 'joy', mouth: 'smile', sq: [0.92, 0.88, 0.92, 0.96], fx: 'hearts'},
+  tickle: {len: 14, face: 'giggle', mouth: 'open', ox: shake(12), fx: 'sparks'},
+  wave: {len: 14, face: 'joy', mouth: 'smile', sway: t => (t >> 1) & 1, fx: 'twinkle'},
+  hop: {len: 10, face: t => (t < 7 ? 'wow' : 'joy'), mouth: t => (t < 7 ? 'o' : 'smile'),
+    oy: [0, -2, -4, -5, -5, -4, -2, 0, 0, 0], sq: [1, 1, 1, 1, 1, 1, 1, 0.88, 0.95, 1], walk: t => t & 1},
+  tail: {len: 12, face: 'wow', mouth: 'o', oy: [-1, -2, -1], sway: t => t & 1, fx: 'exclaim'},
+  flutter: {len: 14, face: 'joy', mouth: 'smile', oy: [-1, -2, -3, -3, -3, -3, -3, -3, -2, -2, -1, -1, 0, 0], flap: t => t & 1},
+  look: {len: 16, face: 'look', fx: 'question'},
+  angry: {len: 20, face: 'angry', mouth: 'frown', ox: shake(10), fx: 'anger'},
+  grumpy: {len: 16, face: 'angry', mouth: 'frown', ox: shake(4), fx: 'anger'},
+  stir: {len: 12, face: t => (t >= 2 && t < 10 ? 'peek' : null), ox: shake(2), fx: 'drowsy'},
+  wobble: {len: 8, ox: [1, -1, 1, -1, 1, 0, 0, 0], fx: 'poke'},
+  flinch: {len: 8, face: 'wow', mouth: 'o', ox: shake(4), fx: 'exclaim'},
+  // two happy jumps and a burst of stars: the widget plays it when the pet evolves
+  evolve: {len: 18, face: t => (t < 14 ? 'joy' : null), mouth: t => (t < 14 ? 'open' : null), flap: t => t & 1,
+    oy: [0, -2, -4, -4, -2, 0, 0, -2, -4, -4, -2, 0], sq: [1, 1, 1, 1, 1, 1, 0.88, 1, 1, 1, 1, 1, 0.88, 0.95], fx: 'burst'},
+};
+
+const CHANNELS = ['ox', 'oy', 'sq', 'bob', 'walk', 'flap', 'sway', 'alt', 'phase', 'rock', 'blink', 'look', 'face', 'mouth', 'fx'];
+function defineClip(name, clip) {
+  const fail = why => { throw new Error(`code.daemon clip "${name}": ${why}`); };
+  if (typeof name !== 'string' || !/^[a-z][a-zA-Z0-9-]*$/.test(name)) fail('name must start with a lowercase letter');
+  if (!clip || !(clip.len >= 1)) fail('len (ticks) is missing');
+  for (const k in clip) if (k !== 'len' && !CHANNELS.includes(k)) fail(`unknown channel "${k}"`);
+  CLIPS[name] = clip;
+  return clip;
 }
-const shake = t => (t & 1 ? 1 : -1);
-// What a reaction does at tick t: whole-body offset (ox, oy), squash toward the ground (sq),
-// motion overrides for the plans (mo), and how the face looks.
-function reactPose(R, motion) {
-  const out = {ox: 0, oy: 0, sq: 1, mo: null, face: null, mouth: null};
-  if (!R || !own(REACTIONS, R.kind)) return out;
-  const t = clamp(R.t | 0, 0, REACTIONS[R.kind].len - 1), m = motion;
-  switch (R.kind) {
-    case 'pat': out.face = 'joy'; out.mouth = 'smile'; if (m && t < 4) out.sq = [0.92, 0.88, 0.92, 0.96][t]; break;
-    case 'tickle': out.face = 'giggle'; out.mouth = 'open'; if (m && t < 12) out.ox = shake(t); break;
-    case 'wave': out.face = 'joy'; out.mouth = 'smile'; if (m) out.mo = {sway: (t >> 1) & 1}; break;
-    case 'hop': {
-      const air = t < 7;
-      out.face = air ? 'wow' : 'joy'; out.mouth = air ? 'o' : 'smile';
-      if (m) { out.oy = [0, -2, -4, -5, -5, -4, -2, 0, 0, 0][t]; if (t === 7) out.sq = 0.88; if (t === 8) out.sq = 0.95; out.mo = {walk: t & 1}; }
-      break;
-    }
-    case 'tail': out.face = 'wow'; out.mouth = 'o'; if (m) { out.oy = [-1, -2, -1][t] || 0; out.mo = {sway: t & 1}; } break;
-    case 'flutter': out.face = 'joy'; out.mouth = 'smile'; if (m) { out.oy = -[1, 2, 3, 3, 3, 3, 3, 3, 2, 2, 1, 1, 0, 0][t]; out.mo = {flap: t & 1}; } break;
-    case 'look': out.face = 'look'; break;
-    case 'angry': case 'grumpy': out.face = 'angry'; out.mouth = 'frown'; if (m && t < (R.kind === 'angry' ? 10 : 4)) out.ox = shake(t); break;
-    case 'stir': out.face = t >= 2 && t < 10 ? 'peek' : null; if (m && t < 2) out.ox = shake(t); break;
-    case 'wobble': if (m) out.ox = [1, -1, 1, -1, 1, 0, 0, 0][t]; break;
-    case 'flinch': out.face = 'wow'; out.mouth = 'o'; if (m && t < 4) out.ox = shake(t); break;
-  }
-  return out;
+
+// The clip a theme plays under a name: its own version if it has one.
+const clipOf = (theme, name) => (theme && theme.clips && own(theme.clips, name) && theme.clips[name]) || (own(CLIPS, name) && CLIPS[name]) || null;
+
+// A channel's value at tick t, or dflt where the clip says nothing.
+function channel(clip, key, t, dflt) {
+  if (!clip || !own(clip, key)) return dflt;
+  const v = clip[key];
+  const x = typeof v === 'function' ? v(t) : Array.isArray(v) ? v[t] : v;
+  return x === undefined ? dflt : x;
 }
-// The motion phase build() animates with, shared with hitTest() so clicks land on what is on screen.
-function motionOf(D, f, opts) {
+
+module.exports = {BASE, CLIPS, defineClip, clipOf, channel};
+},
+'render/pose': function (module, require) {
+/* ---------- pose: where the creature is in its animation at frame f ----------
+   The base clip for its state (idle, weak when CI is critical, sleep) loops on the frame counter; an event clip passed
+   as opts.clip = {name, t, ...} (t ticks since it started; n, gx, gy for clicks) plays on top for its len ticks.
+   build() and hitTest() both take the pose from here, so clicks land on what is on screen. */
+'use strict';
+const {clamp} = require('core/util');
+const {STAGES, MAX_STAGE} = require('core/rules');
+const {themeOf} = require('render/themes');
+const {BASE, clipOf, channel} = require('render/clips');
+
+const MOTION = ['bob', 'walk', 'flap', 'sway', 'alt', 'phase', 'rock', 'blink', 'look'];
+
+// Returns {st, sleeping, motion, mo, pose, play, clip, t}:
+//   mo     what plans() animate with: the MOTION channels, plus hatch (0..1), has (any sessions), motion, sleeping, mut
+//   pose   the whole body: ox, oy, sq, and the face and mouth expressions (null for none)
+//   play   the event clip instance playing (opts.clip), clip its definition, t its tick
+function pose(D, f, opts, T) {
   const st = Math.min(D.stage, MAX_STAGE), has = D.count > 0, motion = !opts.reduced, mut = D.mutations || {};
   const sleeping = has && st > 0 && D.energy < 20;
-  const mo = {
-    bob: motion && !sleeping && !D.critical ? ((f >> 2) & 1) : 0,
-    walk: motion && !sleeping ? ((f >> 2) & 1) : 0,
-    flap: motion && !sleeping ? ((f >> 2) & 1) : 0,
-    sway: motion && !sleeping ? ((f >> 3) & 1) : 0,
-    alt: motion ? ((f >> 1) & 1) : 0,
-    phase: motion ? f * 0.4 : 0,
-    hatch: clamp(D.xp / STAGES[1].xp, 0, 1),
-    has, motion, sleeping, mut,
-  };
-  const rp = canReact(opts.theme) ? reactPose(opts.react, motion) : reactPose(null, motion);
-  if (rp.mo) Object.assign(mo, rp.mo);
-  return {st, mo, rp, motion, sleeping};
-}
-const FALLBACK_ZONE = {limb: 'legs', far: 'legs', membrane: 'wing', horn: 'head', eyeWhite: 'head', core: 'body', belly: 'body'};
-// What a click at grid cell (gx, gy) touched: 'head', 'body', 'arm', 'legs', 'tail', 'wing', 'egg', or null for a miss.
-// Only themes with reacts: true answer; for the rest it returns undefined, and the widget leaves clicks alone.
-function hitTest(D, f, opts, gx, gy) {
-  opts = opts || {};
-  const T = themeOf(opts.theme);
-  if (!T.reacts) return undefined;
-  const {st, mo, rp} = motionOf(D, f, opts);
-  // undo the reaction's own offset and squash
-  const x = Math.round(gx - rp.ox), y = Math.round(G - (G - (gy - rp.oy)) / rp.sq);
-  if (st === 0 && !T.drawsEgg) { const dx = (x - 32) / 9, dy = (y - (G - 9.5)) / 10.5; return dx * dx + dy * dy <= 1 ? 'egg' : null; }
-  const pl = T.plans(st, f, mo), A = pl.a;
-  const zoneAt = (px, py) => {
-    for (const e of pl.eyes) if (px >= e.x - 1 && px <= e.x + e.w && py >= e.y - 1 && py <= e.y + e.h) return 'head';
-    const k = K(px, py);
-    for (let i = pl.parts.length - 1; i >= 0; i--) {
-      const p = pl.parts[i];
-      if (!p.m.has(k)) continue;
-      let z = p.zone || FALLBACK_ZONE[p.role] || 'body';
-      if (z === 'body' && A.split !== undefined && py < A.split) z = 'head';
-      if (z === 'body' && A.tailX !== undefined && px < A.tailX) z = 'tail';
-      return z;
-    }
-    return null;
-  };
-  // the exact cell, then a forgiving ring around it: pixels are small and fingers are not
-  for (let r = 0; r <= 2; r++) {
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-      const z = zoneAt(x + dx, y + dy);
-      if (z) return z;
-    }
-  }
-  const [hx, hy] = A.head;  // the crest floats above the head
-  if (Math.abs(x - hx) <= 4 && y <= hy + 1 && y >= hy - 9) return 'head';
-  return null;
+  const base = BASE[sleeping ? 'sleep' : D.critical ? 'weak' : 'idle'];
+  const clip = opts.clip ? clipOf(T, opts.clip.name) : null, play = clip ? opts.clip : null;
+  const t = clip ? clamp(play.t | 0, 0, clip.len - 1) : 0;
+  const mo = {hatch: clamp(D.xp / STAGES[1].xp, 0, 1), has, motion, sleeping, mut};
+  for (const k of MOTION) mo[k] = motion ? channel(clip, k, t, channel(base, k, f, 0)) : 0;
+  const body = {ox: 0, oy: 0, sq: 1, face: channel(clip, 'face', t, null), mouth: channel(clip, 'mouth', t, null)};
+  if (motion) { body.ox = channel(clip, 'ox', t, 0); body.oy = channel(clip, 'oy', t, 0); body.sq = channel(clip, 'sq', t, 1); }
+  return {st, sleeping, motion, mo, pose: body, play, clip, t};
 }
 
-module.exports = {REACTIONS, reactionFor, canReact, motionOf, hitTest};
+// The clip a theme (by id) plays under a name, for the widget to know how long it lasts.
+const clipFor = (themeId, name) => clipOf(themeOf(themeId), name);
+
+module.exports = {pose, clipFor};
 },
 'render/surface': function (module, require) {
 // The surface one frame is drawn on: a Map(cell index -> color), and a transform a click reaction uses to move or
@@ -686,7 +691,9 @@ function withAnchors(a, parts) {
 module.exports = {partList, withAnchors};
 },
 'render/fx': function (module, require) {
-/* ---------- fx: the little symbols that float off the creature while a click reaction plays ---------- */
+/* ---------- fx: what floats off the creature while a clip plays ----------
+   A clip names its effect (clip.fx = 'hearts') or brings its own function fx(ctx, t). Effects are drawn last, on top.
+   t is the clip's tick; under reduced motion every effect shows one still frame (t = 4). */
 'use strict';
 const {C, mix} = require('render/colors');
 const {GW, G} = require('render/raster');
@@ -696,48 +703,55 @@ function star(ctx, x, y, c) { const {put} = ctx, d = mix(c, ctx.screen, 0.5); pu
 
 // where the default egg's anchors would be
 const EGG = {head: [32, G - 21], box: [23, G - 20, 41, G], hold: [32, G - 10]};
+// the anchors to place an effect by, the top of the head, a row kept on screen, and a column clear of the crest
+const spot = ctx => {
+  const A = ctx.A || EGG, [hx, hy] = A.head;
+  return {A, hx, hy, top: y => Math.max(1, y), sx: Math.min(GW - 4, hx + 8)};
+};
+const QUESTION = ['###', '..#', '.##', '...', '.#.'];
 
-function reactFx(ctx) {
-  const {sprite, motion, rt, react: RX, body, screen} = ctx;
-  const t = motion ? rt : 4, fade = (c, age, life) => age >= life - 2 ? mix(c, screen, 0.45) : c;
-  const A = ctx.A || EGG;
-  const [hx, hy] = A.head, top = y => Math.max(1, y), sx = Math.min(GW - 4, hx + 8);  // sx: clear of the crest
-  switch (RX.kind) {
-    case 'pat': {  // hearts float up off the head, more of them on a streak of pats
-      const n = RX.n >= 3 ? 3 : 2;
-      for (let k = 0; k < n; k++) {
-        const age = t - k * 4, life = 10;
-        if (age < 0 || age >= life) continue;
-        const side = [-1, 1, 0][k], x = hx + side * 6 + (((age >> 2) & 1) ? 1 : 0), y = top(hy - 4 - age);
-        sprite(['#.#', '###', '.#.'], x - 1, y, {'#': fade(C.gem, age, life)});
-      }
-      break;
+const FX = {
+  hearts(ctx, t) {  // hearts float up off the head, more of them on a streak of pats
+    const {hx, hy, top} = spot(ctx), n = ctx.play.n >= 3 ? 3 : 2;
+    for (let k = 0; k < n; k++) {
+      const age = t - k * 4, life = 10;
+      if (age < 0 || age >= life) continue;
+      const side = [-1, 1, 0][k], x = hx + side * 6 + (((age >> 2) & 1) ? 1 : 0), y = top(hy - 4 - age);
+      ctx.sprite(['#.#', '###', '.#.'], x - 1, y, {'#': age >= life - 2 ? mix(C.gem, ctx.screen, 0.45) : C.gem});
     }
-    case 'tickle': {  // little sparks fly off both sides
-      const [x0, y0, x1, y1] = A.box, my = (y0 + y1) / 2;
-      if (t < 12) { const k = t % 4; star(ctx, t & 1 ? x1 + 1 + k : x0 - 1 - k, my - 2 - k, C.spark); }
-      break;
+  },
+  sparks(ctx, t) {  // little sparks fly off both sides
+    const {A} = spot(ctx), [x0, y0, x1, y1] = A.box, my = (y0 + y1) / 2;
+    if (t < 12) { const k = t % 4; star(ctx, t & 1 ? x1 + 1 + k : x0 - 1 - k, my - 2 - k, C.spark); }
+  },
+  twinkle(ctx, t) { const [wx, wy] = spot(ctx).A.hold; if (t < 12 && (t & 2)) star(ctx, wx - 1, wy - 3, C.spark); },  // at the waving hand
+  exclaim(ctx, t) { const {hy, top, sx} = spot(ctx); if (t < 10 && (t < 6 || (t & 1))) ctx.sprite(['#', '#', '#', '.', '#'], sx, top(hy - 7), {'#': C.yellow}); },
+  question(ctx, t) { const {hy, top, sx} = spot(ctx); if (t < 12) ctx.sprite(QUESTION, sx, top(hy - 7), {'#': mix(ctx.body, '#ffffff', 0.6)}); },
+  drowsy(ctx, t) { const {hy, top, sx} = spot(ctx); if (t < 8) ctx.sprite(QUESTION, sx, top(hy - 7), {'#': mix(ctx.body, ctx.screen, 0.35)}); },
+  anger(ctx, t) {  // a pulsing anger mark on the forehead
+    const {hx, hy} = spot(ctx);
+    ctx.sprite((t >> 1) & 1 ? ['#.#', '.#.', '#.#'] : ['#.#', '...', '#.#'], hx + 3, hy + 2, {'#': C.alarm});
+  },
+  poke(ctx, t) { const {gx, gy} = ctx.play; if (gx !== undefined && t < 6) star(ctx, gx, gy, C.spark); },  // where the click landed
+  burst(ctx, t) {  // stars flying out of the creature in a ring, gold and then fading
+    const {A} = spot(ctx), [x0, y0, x1, y1] = A.box, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const r = 4 + t * 1.6, rx = (x1 - x0) / 2 + r, ry = (y1 - y0) / 2 * 0.6 + r * 0.6;
+    if (t >= 16) return;
+    for (let k = 0; k < 8; k++) {
+      const ang = k * Math.PI / 4 + t * 0.08, x = Math.round(cx + rx * Math.cos(ang)), y = Math.round(cy + ry * Math.sin(ang));
+      if (y < 0 || y > G + 2 || x < 0 || x >= GW) continue;
+      const c = t < 8 ? C.gold : t < 12 ? C.spark : mix(C.spark, ctx.screen, 0.5);
+      if (k % 2) ctx.put(x, y, c); else star(ctx, x, y, c);
     }
-    case 'wave': { const [wx, wy] = A.hold; if (t < 12 && (t & 2)) star(ctx, wx - 1, wy - 3, C.spark); break; }
-    case 'tail': case 'flinch':  // !
-      if (t < 10 && (t < 6 || (t & 1))) sprite(['#', '#', '#', '.', '#'], sx, top(hy - 7), {'#': C.yellow});
-      break;
-    case 'look':  // ? while it looks around for whatever poked the screen
-      if (t < 12) sprite(['###', '..#', '.##', '...', '.#.'], sx, top(hy - 7), {'#': mix(body, '#ffffff', 0.6)});
-      break;
-    case 'angry': case 'grumpy': {  // a pulsing anger mark
-      const rows = (t >> 1) & 1 ? ['#.#', '.#.', '#.#'] : ['#.#', '...', '#.#'];
-      sprite(rows, hx + 3, hy + 2, {'#': C.alarm});
-      break;
-    }
-    case 'stir':
-      if (t < 8) sprite(['###', '..#', '.##', '...', '.#.'], sx, top(hy - 7), {'#': mix(body, screen, 0.35)});
-      break;
-    case 'wobble': if (RX.gx !== undefined && t < 6) star(ctx, RX.gx, RX.gy, C.spark); break;
-  }
+  },
+};
+
+function playFx(ctx) {
+  const fx = ctx.clip.fx, draw = typeof fx === 'function' ? fx : FX[fx];
+  if (draw) draw(ctx, ctx.motion ? ctx.ct : 4);
 }
 
-module.exports = {reactFx, star};
+module.exports = {FX, playFx, star};
 },
 'render/egg': function (module, require) {
 /* ---------- eggs ----------
@@ -748,17 +762,17 @@ const {clamp} = require('core/util');
 const {STAGES} = require('core/rules');
 const {mix} = require('render/colors');
 const {G, px, paint} = require('render/raster');
-const {reactFx} = require('render/fx');
+const {playFx} = require('render/fx');
 
 // how far along hatching is, 0 to 1
 const hatching = D => clamp(D.xp / STAGES[1].xp, 0, 1);
 
 function drawEgg(ctx) {
-  const {D, f, motion, has, body, screen, eye, put, rp, react} = ctx;
-  const w = (f % 48) - 43, wob = motion && has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;  // a wobble every 6 seconds
+  const {D, mo, has, body, screen, eye, put, pose} = ctx;
+  const wob = has ? mo.rock : 0;  // it rocks now and then once there is something inside
   const cx = 32 + wob, cy = G - 10 + 0.5;
   for (let x = 24; x <= 40; x++) put(x, G + 1, mix(body, screen, 0.8));
-  ctx.move(rp.ox, 0, 1);
+  ctx.move(pose.ox, pose.oy, pose.sq);
   const m = new Set();
   eggShape(m, cx, cy);
   paint(put, m, body, screen, (x, y) => ((x * 7 + y * 13) % 11 === 0 ? mix(body, screen, 0.42) : null));
@@ -768,7 +782,7 @@ function drawEgg(ctx) {
     const n = Math.ceil(p * path.length);
     for (let i = 0; i < n; i++) put(cx + path[i][0], Math.round(cy) - 2 + path[i][1], eye);
   }
-  if (react && react.kind === 'wobble') { ctx.move(0, 0, 1); reactFx(ctx); }
+  if (ctx.play) { ctx.move(0, 0, 1); playFx(ctx); }
 }
 
 // an egg outline filled into m: narrower at the top
@@ -792,7 +806,7 @@ module.exports = {drawEgg, eggShape, eggCrack, hatching};
 'render/face': function (module, require) {
 /* ---------- face: eyes and mouth ----------
    The default face draws the plan's pixel eyes ({x, y, w, h}, or a visor) and pixel mouth. It blinks, sleeps, shows
-   mood and sickness, and swaps in an expression while a click reaction plays (ctx.rp.face, ctx.rp.mouth).
+   mood and sickness, and swaps in an expression while a clip asks for one (ctx.pose.face, ctx.pose.mouth).
    A theme with a face of its own sets face(ctx) and can reuse drawEye() and drawMouth() from here, as Derpy does. */
 'use strict';
 const {CREST_STAGE} = require('core/rules');
@@ -808,7 +822,7 @@ const eyeColor = (ctx, i) => ctx.mut.cursed && i === ctx.pl.eyes.length - 1 ? C.
 
 function drawEye(ctx, e, i, ec) {
   const {put, D, mut, sleeping, blink, form, happy, tired, skin, screen, eye} = ctx;
-  if (ctx.rp.face && expressionEye(ctx, e, i, ec)) return;
+  if (ctx.pose.face && expressionEye(ctx, e, i, ec)) return;
   if (e.visor) {
     const vc = D.sick ? C.alarm : mut.cursed ? C.curse : '#FFFFFF';
     for (let k = 0; k < e.w; k++) put(e.x + k, e.y, (sleeping || blink) && k % 2 ? eye : vc);
@@ -830,7 +844,7 @@ function drawEye(ctx, e, i, ec) {
 // M: {x, y, w} and optionally color (painted lips instead of a dark line), fangs, tooth, teeth (a color), tongue
 function drawMouth(ctx, M) {
   const {put, D, aff, st, motion, mo, sleeping, happy, pal, eye} = ctx, lip = M.color ? ctx.tint(M.color) : eye;
-  if (ctx.rp.mouth) { expressionMouth(ctx, M, ctx.rp.mouth); return; }
+  if (ctx.pose.mouth) { expressionMouth(ctx, M, ctx.pose.mouth); return; }
   if (aff === 'local' && st >= CREST_STAGE && !D.sick) {  // a shell prompt: >_
     put(M.x - 1, M.y - 1, eye); put(M.x, M.y, eye); put(M.x - 1, M.y + 1, eye);
     if (!motion || mo.alt) { put(M.x + 1, M.y + 1, eye); put(M.x + 2, M.y + 1, eye); }
@@ -844,13 +858,15 @@ function drawMouth(ctx, M) {
   if (M.tongue && !sleeping) { put(M.x + M.w, M.y, C.tongue); put(M.x + M.w + 1, M.y - 1, C.tongue); put(M.x + M.w + 1, M.y + 1, C.tongue); }
 }
 
-/* ---- expressions while a click reaction plays ---- */
+/* ---- expressions while a clip plays ---- */
 function expressionEye(ctx, e, i, ec) {
-  const {put, react: RX, rt, skin, eye, pl} = ctx;
-  const face = ctx.rp.face, two = pl.eyes.length === 2, left = !two || i === 0, x = e.x, y = e.y, w = e.w, h = e.h;
+  const {put, play, ct, skin, eye, pl} = ctx;
+  // where the eyes look: at the click, or straight ahead for a clip that was not a click
+  const gx = play && play.gx !== undefined ? play.gx : e.x + e.w / 2, gy = play && play.gy !== undefined ? play.gy : e.y;
+  const face = ctx.pose.face, two = pl.eyes.length === 2, left = !two || i === 0, x = e.x, y = e.y, w = e.w, h = e.h;
   if (e.visor) {
-    const vc = face === 'angry' ? C.alarm : face === 'giggle' ? (rt & 1 ? C.gem : '#FFFFFF') : face === 'joy' ? mix(C.gem, '#FFFFFF', 0.45) : '#FFFFFF';
-    const sx = face === 'look' ? Math.sign(RX.gx - (x + w / 2)) : 0;
+    const vc = face === 'angry' ? C.alarm : face === 'giggle' ? (ct & 1 ? C.gem : '#FFFFFF') : face === 'joy' ? mix(C.gem, '#FFFFFF', 0.45) : '#FFFFFF';
+    const sx = face === 'look' ? Math.sign(gx - (x + w / 2)) : 0;
     for (let k = 0; k < w; k++) put(x + k + sx, y, face === 'joy' && k === 2 ? eye : face === 'peek' && k > 2 ? eye : vc);
     if (face === 'wow') for (let k = 1; k < w - 1; k++) put(x + k, y - 1, vc);
     return true;
@@ -860,7 +876,7 @@ function expressionEye(ctx, e, i, ec) {
     case 'joy': {  // closed, curved up: ^ ^
       if (w >= 2) { put(x - 1, y + 1, ec); put(x, y, ec); put(x + w - 1, y, ec); put(x + w, y + 1, ec); }
       else { put(x - 1, y + 1, ec); put(x, y, ec); put(x + 1, y + 1, ec); }
-      if (RX.n >= 3) {  // blush after a few pats
+      if (play && play.n >= 3) {  // blush after a few pats
         const bc = mix(C.gem, skin, 0.35), bx = two ? (left ? x - 2 : x + w) : x - 1;
         put(bx, y + 2, bc); put(bx + 1, y + 2, bc);
       }
@@ -875,7 +891,7 @@ function expressionEye(ctx, e, i, ec) {
       hole(x, y - 1, w + 1, h + 1); put(x, y - 1, '#FFFFFF');
       return true;
     case 'look': {  // eyes follow the click
-      const sx = Math.sign(Math.round(RX.gx - ctx.transform.ox) - x), sy = Math.abs(RX.gy - y) > 4 ? Math.sign(RX.gy - y) : 0;
+      const sx = Math.sign(Math.round(gx - ctx.transform.ox) - x), sy = Math.abs(gy - y) > 4 ? Math.sign(gy - y) : 0;
       hole(x + sx, y + sy, w, h);
       return true;
     }
@@ -1051,7 +1067,8 @@ module.exports = {shadow, orbit, shiny, sick, sleep};
 },
 'render/build': function (module, require) {
 /* ---------- build: one frame of the pet as pixels ----------
-   build(D, f, opts) returns Map(cell index -> color) for frame f (8 per second). opts: {theme, screen, reduced, react}.
+   build(D, f, opts) returns Map(cell index -> color) for frame f (8 per second). opts: {theme, screen, reduced, clip}:
+   clip = {name, t, n, gx, gy} plays an event clip (clips.js), t ticks in.
 
    A frame is drawn in layers, back to front. Every layer gets the same context (see context()): the pet's state,
    the theme's figure for this frame (plan, anchors, palette) and the surface to draw on.
@@ -1064,19 +1081,18 @@ module.exports = {shadow, orbit, shiny, sick, sleep};
      worn, crest  form accessories, crown and the affinity crest over the head
      orbit, shiny, sick, sleep, reaction fx */
 'use strict';
-const {clamp, own} = require('core/util');
-const {MAX_STAGE, CREST_STAGE, FORM_STAGE, PET} = require('core/rules');
+const {CREST_STAGE, FORM_STAGE, PET} = require('core/rules');
 const {C, mix} = require('render/colors');
 const {paint} = require('render/raster');
 const {themeOf} = require('render/themes');
-const {REACTIONS, motionOf} = require('render/reactions');
+const {pose} = require('render/pose');
 const {surface} = require('render/surface');
 const {withAnchors} = require('render/figure');
 const {drawEgg} = require('render/egg');
 const {drawFace} = require('render/face');
 const {backdrop, trail, worn, crest} = require('render/accessories');
 const {shadow, orbit, shiny, sick, sleep} = require('render/status');
-const {reactFx} = require('render/fx');
+const {playFx} = require('render/fx');
 
 function build(D, f, opts) {
   opts = opts || {};
@@ -1085,7 +1101,7 @@ function build(D, f, opts) {
   if (ctx.st === 0 && !T.drawsEgg) { drawEgg(ctx); return ctx.buf; }
   figure(ctx);
   backdrop(ctx);
-  ctx.move(ctx.rp.ox, ctx.rp.oy, ctx.rp.sq);
+  ctx.move(ctx.pose.ox, ctx.pose.oy, ctx.pose.sq);
   trail(ctx);
   shadow(ctx);
   parts(ctx);
@@ -1097,33 +1113,31 @@ function build(D, f, opts) {
   shiny(ctx);
   sick(ctx);
   sleep(ctx);
-  if (ctx.react) reactFx(ctx);
+  if (ctx.play) playFx(ctx);
   return ctx.buf;
 }
 
 // Everything a layer needs to know about this frame.
 function context(D, f, opts, T) {
   const screen = opts.screen || T.screen || '#080A0E', motion = !opts.reduced;
-  const st = Math.min(D.stage, MAX_STAGE), has = D.count > 0, mut = D.mutations || {};
-  const sleeping = has && st > 0 && D.energy < 20;
-  const {mo, rp} = motionOf(D, f, opts);
-  const react = T.reacts && opts.react && own(REACTIONS, opts.react.kind) ? opts.react : null;
+  const P = pose(D, f, opts, T), {st, sleeping, mo} = P, has = D.count > 0, mut = D.mutations || {};
   // shiny pets turn golden, sick ones turn grey-green
   const tint = c => { let x = c; if (mut.shiny) x = mix(x, C.gold, 0.35); if (D.sick) x = mix(x, C.sick, D.critical ? 0.6 : 0.4); return x; };
   return Object.assign(surface(), {
     D, f, theme: T, st, aff: D.affinity, has, mut, sleeping, motion, screen,
     form: st >= FORM_STAGE ? D.form : null,
-    mo,                 // idle motion: bob, walk, flap, sway, alt, phase
-    rp,                 // the reaction's pose: ox, oy, sq, face, mouth
-    react,              // the reaction playing, if this theme reacts: {kind, t, n, gx, gy}
-    rt: react ? clamp(react.t | 0, 0, REACTIONS[react.kind].len - 1) : 0,
+    mo,                 // motion channels for plans(): bob, walk, flap, sway, alt, phase, rock, blink, look, hatch...
+    pose: P.pose,       // the whole body: ox, oy, sq, and face and mouth expressions
+    play: P.play,       // the event clip playing, {name, t, n, gx, gy}, or null
+    clip: P.clip,       // its definition
+    ct: P.t,            // its tick
     tint,
     body: tint(PET[D.affinity || 'none']),  // the affinity color
     eye: screen,        // eyes and mouths are holes in the creature
-    blink: motion && ((f % 41) < 1 || (f % 113) === 60),
+    blink: mo.blink,
     happy: D.mood >= 70 && !sleeping && !D.sick,
     tired: has && D.rest < 50,
-    look: motion ? (f >> 2) & 3 : 0,
+    look: mo.look,
   });
 }
 
@@ -1158,6 +1172,71 @@ function parts(ctx) {
 }
 
 module.exports = {build};
+},
+'render/reactions': function (module, require) {
+/* ---------- clicks ----------
+   For themes with reacts: true (Classic, Demonic and Succubus): their parts say which zone they are. The widget asks
+   hitTest() what a click touched, picks a clip with reactionFor(), and plays it: opts.clip = {name, t, n, gx, gy} to
+   build() for the clip's len ticks (n: a streak of the same reaction, gx, gy: the cell clicked). Clips are in clips.js;
+   reactions are cosmetic and never change stats. */
+'use strict';
+const {MAX_STAGE} = require('core/rules');
+const {G, K} = require('render/raster');
+const {themeOf} = require('render/themes');
+const {pose} = require('render/pose');
+
+const canReact = id => !!themeOf(id).reacts;
+const ANGRY_AT = 6;  // this many clicks in a row (see the widget's combo window) makes it cross
+const BY_ZONE = {head: 'pat', body: 'tickle', arm: 'wave', legs: 'hop', tail: 'tail', wing: 'flutter'};
+// The clip a click plays. combo: how many clicks landed in quick succession, this one included.
+function reactionFor(D, zone, combo) {
+  const st = Math.min(D.stage, MAX_STAGE), sleeping = D.count > 0 && st > 0 && D.energy < 20;
+  if (st === 0) return 'wobble';
+  if (sleeping) return combo >= 3 ? 'grumpy' : 'stir';
+  if (combo >= ANGRY_AT) return 'angry';
+  if (!zone) return 'look';
+  if (D.sick) return zone === 'head' ? 'pat' : 'flinch';  // too poorly to hop or show off
+  return BY_ZONE[zone] || 'tickle';
+}
+const FALLBACK_ZONE = {limb: 'legs', far: 'legs', membrane: 'wing', horn: 'head', eyeWhite: 'head', core: 'body', belly: 'body'};
+// What a click at grid cell (gx, gy) touched: 'head', 'body', 'arm', 'legs', 'tail', 'wing', 'egg', or null for a miss.
+// Only themes with reacts: true answer; for the rest it returns undefined, and the widget leaves clicks alone.
+function hitTest(D, f, opts, gx, gy) {
+  opts = opts || {};
+  const T = themeOf(opts.theme);
+  if (!T.reacts) return undefined;
+  const {st, mo, pose: p} = pose(D, f, opts, T);
+  // undo the clip's own offset and squash
+  const x = Math.round(gx - p.ox), y = Math.round(G - (G - (gy - p.oy)) / p.sq);
+  if (st === 0 && !T.drawsEgg) { const dx = (x - 32) / 9, dy = (y - (G - 9.5)) / 10.5; return dx * dx + dy * dy <= 1 ? 'egg' : null; }
+  const pl = T.plans(st, f, mo), A = pl.a;
+  const zoneAt = (px, py) => {
+    for (const e of pl.eyes) if (px >= e.x - 1 && px <= e.x + e.w && py >= e.y - 1 && py <= e.y + e.h) return 'head';
+    const k = K(px, py);
+    for (let i = pl.parts.length - 1; i >= 0; i--) {
+      const p = pl.parts[i];
+      if (!p.m.has(k)) continue;
+      let z = p.zone || FALLBACK_ZONE[p.role] || 'body';
+      if (z === 'body' && A.split !== undefined && py < A.split) z = 'head';
+      if (z === 'body' && A.tailX !== undefined && px < A.tailX) z = 'tail';
+      return z;
+    }
+    return null;
+  };
+  // the exact cell, then a forgiving ring around it: pixels are small and fingers are not
+  for (let r = 0; r <= 2; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const z = zoneAt(x + dx, y + dy);
+      if (z) return z;
+    }
+  }
+  const [hx, hy] = A.head;  // the crest floats above the head
+  if (Math.abs(x - hx) <= 4 && y <= hy + 1 && y >= hy - 9) return 'head';
+  return null;
+}
+
+module.exports = {reactionFor, canReact, hitTest};
 },
 'render/svg': function (module, require) {
 /* ---------- animated SVG card (for a README) ---------- */
@@ -1766,7 +1845,7 @@ function plans(st, f, mo) {
   let eyes = [], mouth = null, a = {}, main = null, decor = null;
   switch (st) {
     case 0: { // PYSANKA: a painted Easter egg, gold zigzag belt and sun rosettes on red
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       main = S.red;
       const pat = (x, y) => {
@@ -2052,7 +2131,7 @@ function plans(st, f, mo) {
   let eyes = [], mouth = null, a = {}, main = null;
   switch (st) {
     case 0: { // DARUMA: a tumbler doll. One eye is painted at the first commit, the other fills in as it nears hatching.
-      const w = (f % 48) - 43, rock = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const rock = mo.has ? mo.rock : 0;
       const ex = cx + rock, cy = G - 11 + 0.5, fy = Math.round(cy) - 2;
       main = S.red;
       const b = part('body');
@@ -2389,7 +2468,7 @@ function plans(st, f, mo) {
 
   switch (st) {
     case 0: { // OBSIDIAN EGG: black glass veined with lava; it rocks now and then, and the crack glows
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       main = S.obsidian;
       const b = part('body', {zone: 'egg', pattern: lavaVeins(wob)}); eggShape(b, ex, cy);
@@ -2719,7 +2798,7 @@ function plans(st, f, mo) {
 
   switch (st) {
     case 0: { // HEART EGG: an egg in the affinity color, dotted with pink, that rocks now and then
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       const b = part('body', {zone: 'egg', pattern: (x, y) => ((x - wob) * 5 + y * 3) % 9 === 0 ? PINK : null}); eggShape(b, ex, cy);
       const h = part('core', {zone: 'egg', color: PINK, flat: true}); heart(h, ex, cy - 1, true);
@@ -2910,7 +2989,9 @@ const {mix} = require('render/colors');
 const {GW, GH} = require('render/raster');
 const {defineTheme, themes, hasTheme, stageBody, themeColors} = require('render/themes');
 const {build} = require('render/build');
-const {REACTIONS, reactionFor, canReact, hitTest} = require('render/reactions');
+const {reactionFor, canReact, hitTest} = require('render/reactions');
+const {CLIPS, defineClip} = require('render/clips');
+const {clipFor} = require('render/pose');
 const {renderSVG} = require('render/svg');
 
 // The themes, in picker order.
@@ -2930,7 +3011,7 @@ module.exports = {
   SESSION_GAP, sessionStart, rescanFrom, commitKey, detectKind, toSessions,
   ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   // pixels
-  GW, GH, mix, build, renderSVG, REACTIONS, reactionFor, canReact, hitTest,
+  GW, GH, mix, build, renderSVG, CLIPS, defineClip, clipFor, reactionFor, canReact, hitTest,
   defineTheme, themes, hasTheme, stageBody, themeColors,
 };
 },

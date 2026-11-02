@@ -8,8 +8,8 @@
      screen, dot   its own screen and dot-grid colors (optional; otherwise the widget's)
      bodies    11 creature names, one per stage (optional; otherwise STAGES[st].body)
 
-     plans(st, f, mo)  the creature for stage st at frame f, moving as mo says (motionOf in reactions.js: bob, walk,
-                       flap, sway, alt, phase, hatch). Returns a figure {parts, eyes, mouth, a, main?, decor?}:
+     plans(st, f, mo)  the creature for stage st at frame f, moving as mo says (the motion channels of the playing clips,
+                       pose.js: bob, walk, flap, sway, alt, phase, rock, blink, look; and hatch, has, sleeping). Returns a figure {parts, eyes, mouth, a, main?, decor?}:
                          parts  shapes in drawing order, from partList() in figure.js: part(role, {zone, color, pattern, flat})
                                 role picks the shading: body, limb, far, belly, membrane, horn, core, eyeWhite.
                                 color: its own color instead of the role's, or skin => color to derive it from the skin
@@ -24,6 +24,7 @@
      face(ctx)  draws the eyes and mouth itself, instead of the default pixel face (Derpy's googly eyes)
      drawsEgg   plans() draws stage 0 too (otherwise the default egg is used)
      reacts     answers clicks: its parts carry zones (see reactions.js)
+     clips      its own versions of clips, by name (see clips.js), e.g. {pat: {len: 12, face: 'joy', fx: 'hearts'}}
 
    ctx, the context every layer and hook gets, is described in build.js. */
 'use strict';

@@ -28,7 +28,9 @@ const {mix} = require('./render/colors');
 const {GW, GH} = require('./render/raster');
 const {defineTheme, themes, hasTheme, stageBody, themeColors} = require('./render/themes');
 const {build} = require('./render/build');
-const {REACTIONS, reactionFor, canReact, hitTest} = require('./render/reactions');
+const {reactionFor, canReact, hitTest} = require('./render/reactions');
+const {CLIPS, defineClip} = require('./render/clips');
+const {clipFor} = require('./render/pose');
 const {renderSVG} = require('./render/svg');
 
 // The themes, in picker order.
@@ -48,6 +50,6 @@ module.exports = {
   SESSION_GAP, sessionStart, rescanFrom, commitKey, detectKind, toSessions,
   ciFromRollup, ciFromPipeline, updateCI, Q_REPO, Q_HIST, scanGitHubRepo,
   // pixels
-  GW, GH, mix, build, renderSVG, REACTIONS, reactionFor, canReact, hitTest,
+  GW, GH, mix, build, renderSVG, CLIPS, defineClip, clipFor, reactionFor, canReact, hitTest,
   defineTheme, themes, hasTheme, stageBody, themeColors,
 };

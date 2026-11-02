@@ -1,5 +1,6 @@
 /* ---------- build: one frame of the pet as pixels ----------
-   build(D, f, opts) returns Map(cell index -> color) for frame f (8 per second). opts: {theme, screen, reduced, react}.
+   build(D, f, opts) returns Map(cell index -> color) for frame f (8 per second). opts: {theme, screen, reduced, clip}:
+   clip = {name, t, n, gx, gy} plays an event clip (clips.js), t ticks in.
 
    A frame is drawn in layers, back to front. Every layer gets the same context (see context()): the pet's state,
    the theme's figure for this frame (plan, anchors, palette) and the surface to draw on.
@@ -12,19 +13,18 @@
      worn, crest  form accessories, crown and the affinity crest over the head
      orbit, shiny, sick, sleep, reaction fx */
 'use strict';
-const {clamp, own} = require('../core/util');
-const {MAX_STAGE, CREST_STAGE, FORM_STAGE, PET} = require('../core/rules');
+const {CREST_STAGE, FORM_STAGE, PET} = require('../core/rules');
 const {C, mix} = require('./colors');
 const {paint} = require('./raster');
 const {themeOf} = require('./themes');
-const {REACTIONS, motionOf} = require('./reactions');
+const {pose} = require('./pose');
 const {surface} = require('./surface');
 const {withAnchors} = require('./figure');
 const {drawEgg} = require('./egg');
 const {drawFace} = require('./face');
 const {backdrop, trail, worn, crest} = require('./accessories');
 const {shadow, orbit, shiny, sick, sleep} = require('./status');
-const {reactFx} = require('./fx');
+const {playFx} = require('./fx');
 
 function build(D, f, opts) {
   opts = opts || {};
@@ -33,7 +33,7 @@ function build(D, f, opts) {
   if (ctx.st === 0 && !T.drawsEgg) { drawEgg(ctx); return ctx.buf; }
   figure(ctx);
   backdrop(ctx);
-  ctx.move(ctx.rp.ox, ctx.rp.oy, ctx.rp.sq);
+  ctx.move(ctx.pose.ox, ctx.pose.oy, ctx.pose.sq);
   trail(ctx);
   shadow(ctx);
   parts(ctx);
@@ -45,33 +45,31 @@ function build(D, f, opts) {
   shiny(ctx);
   sick(ctx);
   sleep(ctx);
-  if (ctx.react) reactFx(ctx);
+  if (ctx.play) playFx(ctx);
   return ctx.buf;
 }
 
 // Everything a layer needs to know about this frame.
 function context(D, f, opts, T) {
   const screen = opts.screen || T.screen || '#080A0E', motion = !opts.reduced;
-  const st = Math.min(D.stage, MAX_STAGE), has = D.count > 0, mut = D.mutations || {};
-  const sleeping = has && st > 0 && D.energy < 20;
-  const {mo, rp} = motionOf(D, f, opts);
-  const react = T.reacts && opts.react && own(REACTIONS, opts.react.kind) ? opts.react : null;
+  const P = pose(D, f, opts, T), {st, sleeping, mo} = P, has = D.count > 0, mut = D.mutations || {};
   // shiny pets turn golden, sick ones turn grey-green
   const tint = c => { let x = c; if (mut.shiny) x = mix(x, C.gold, 0.35); if (D.sick) x = mix(x, C.sick, D.critical ? 0.6 : 0.4); return x; };
   return Object.assign(surface(), {
     D, f, theme: T, st, aff: D.affinity, has, mut, sleeping, motion, screen,
     form: st >= FORM_STAGE ? D.form : null,
-    mo,                 // idle motion: bob, walk, flap, sway, alt, phase
-    rp,                 // the reaction's pose: ox, oy, sq, face, mouth
-    react,              // the reaction playing, if this theme reacts: {kind, t, n, gx, gy}
-    rt: react ? clamp(react.t | 0, 0, REACTIONS[react.kind].len - 1) : 0,
+    mo,                 // motion channels for plans(): bob, walk, flap, sway, alt, phase, rock, blink, look, hatch...
+    pose: P.pose,       // the whole body: ox, oy, sq, and face and mouth expressions
+    play: P.play,       // the event clip playing, {name, t, n, gx, gy}, or null
+    clip: P.clip,       // its definition
+    ct: P.t,            // its tick
     tint,
     body: tint(PET[D.affinity || 'none']),  // the affinity color
     eye: screen,        // eyes and mouths are holes in the creature
-    blink: motion && ((f % 41) < 1 || (f % 113) === 60),
+    blink: mo.blink,
     happy: D.mood >= 70 && !sleeping && !D.sick,
     tired: has && D.rest < 50,
-    look: motion ? (f >> 2) & 3 : 0,
+    look: mo.look,
   });
 }
 

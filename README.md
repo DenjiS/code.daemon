@@ -105,6 +105,16 @@ Every theme is one file in `src/themes/` that draws its creatures from shapes (e
 3. Add `defineTheme(require('./themes/<id>'));` to `src/index.js` and run `npm run build`.
 4. Add `theme.<id>` and `body.<id>.0`–`10` to each `ui/i18n/<lang>.js`; `npm test` lists what is missing and checks every stage in every state.
 
+### Adding an animation
+
+Animations are clips: data in `src/render/clips.js`, not code in each theme. A clip has a length in ticks (8 per second) and channels, each a constant, an array per tick or a function of the tick: the body's offset and squash (`ox`, `oy`, `sq`), the motion phases themes draw with (`bob`, `walk`, `flap`, `sway`...), a face and a mouth expression, and an effect (`fx`). A new clip plays in every theme at once:
+
+```js
+hop: {len: 10, oy: [0, -2, -4, -5, -5, -4, -2, 0, 0, 0], sq: [1, 1, 1, 1, 1, 1, 1, 0.88, 0.95, 1], face: t => (t < 7 ? 'wow' : 'joy'), walk: t => t & 1}
+```
+
+Add one to `CLIPS` (or call `PetCore.defineClip(name, clip)`) and play it with `build(D, f, {clip: {name, t}})`; the widget plays `evolve` when the pet evolves and a reaction when you click it. Idle, sleep and the weak bounce of a critically sick pet are clips too (`BASE`). A theme can bring its own version of any clip in `clips`.
+
 ## Languages
 
 **Setup → Language** picks the interface language (or *System*, which follows Windows) and, separately, the wiki language (or *Same as interface*). Both are saved with the pet; the tray menu follows the interface. The GitHub profile card stays in English.

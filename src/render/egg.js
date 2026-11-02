@@ -6,17 +6,17 @@ const {clamp} = require('../core/util');
 const {STAGES} = require('../core/rules');
 const {mix} = require('./colors');
 const {G, px, paint} = require('./raster');
-const {reactFx} = require('./fx');
+const {playFx} = require('./fx');
 
 // how far along hatching is, 0 to 1
 const hatching = D => clamp(D.xp / STAGES[1].xp, 0, 1);
 
 function drawEgg(ctx) {
-  const {D, f, motion, has, body, screen, eye, put, rp, react} = ctx;
-  const w = (f % 48) - 43, wob = motion && has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;  // a wobble every 6 seconds
+  const {D, mo, has, body, screen, eye, put, pose} = ctx;
+  const wob = has ? mo.rock : 0;  // it rocks now and then once there is something inside
   const cx = 32 + wob, cy = G - 10 + 0.5;
   for (let x = 24; x <= 40; x++) put(x, G + 1, mix(body, screen, 0.8));
-  ctx.move(rp.ox, 0, 1);
+  ctx.move(pose.ox, pose.oy, pose.sq);
   const m = new Set();
   eggShape(m, cx, cy);
   paint(put, m, body, screen, (x, y) => ((x * 7 + y * 13) % 11 === 0 ? mix(body, screen, 0.42) : null));
@@ -26,7 +26,7 @@ function drawEgg(ctx) {
     const n = Math.ceil(p * path.length);
     for (let i = 0; i < n; i++) put(cx + path[i][0], Math.round(cy) - 2 + path[i][1], eye);
   }
-  if (react && react.kind === 'wobble') { ctx.move(0, 0, 1); reactFx(ctx); }
+  if (ctx.play) { ctx.move(0, 0, 1); playFx(ctx); }
 }
 
 // an egg outline filled into m: narrower at the top

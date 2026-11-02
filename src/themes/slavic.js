@@ -35,7 +35,7 @@ function plans(st, f, mo) {
   let eyes = [], mouth = null, a = {}, main = null, decor = null;
   switch (st) {
     case 0: { // PYSANKA: a painted Easter egg, gold zigzag belt and sun rosettes on red
-      const w = (f % 48) - 43, wob = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const wob = mo.has ? mo.rock : 0;
       const ex = cx + wob, cy = G - 10 + 0.5;
       main = S.red;
       const pat = (x, y) => {

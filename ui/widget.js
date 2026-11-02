@@ -142,7 +142,7 @@ function paint() {
   if (!W || !H) return;
   const GW = P.GW, GH = P.GH, cell = W / GW, gap = Math.max(1, cell * 0.14), r = cell - gap;
   const tc = P.themeColors(state.theme), screen = tc ? tc.screen : theme.screen, dot = tc ? tc.dot : theme.dot;
-  const buf = P.build(D, frame, {screen, reduced, theme: state.theme, react: reactNow()});
+  const buf = P.build(D, frame, {screen, reduced, theme: state.theme, clip: clipNow()});
   const body = PET[D.affinity || 'none'];
   ctx.shadowBlur = 0;
   ctx.fillStyle = screen; ctx.fillRect(0, 0, W, H);
@@ -177,6 +177,7 @@ function fx(el, text) {
 }
 function evolve(st) {
   flash = 12;
+  play('evolve');
   const n = N(), form = st >= FORM_STAGE && D.form ? ' · ' + n.upper(n.form(D.form)) : '';
   setTimeout(() => fx($('#evofx'), `→ ${n.stage(st)}${form}`), 600);
 }
@@ -490,39 +491,45 @@ function startDrag(e) {
 }
 $('#bar').addEventListener('mousedown', startDrag);
 
-/* ---------- poking the pet ----------
+/* ---------- clips and poking the pet ----------
+   An event clip (pet-core's clips: a reaction to a click, or 'evolve') plays over the pet for its length.
    On the screen a press that stays put is a click on the pet; one that moves a few pixels drags the window,
    as before. Themes without reactions (P.canReact) drag straight away. Reactions are cosmetic only. */
 const DRAG_PX = 4, COMBO_MS = 2500, TICK_MS = 125;  // TICK_MS: one animation frame at 8 fps
-let press = null, react = null, lastReact = null, pokes = [], hoverCell = '';
+let press = null, playing = null, lastPoke = null, pokes = [], hoverCell = '';
+function play(name, extra) {
+  playing = Object.assign({name, start: performance.now()}, extra);
+  paint();
+}
+// The clip playing now, as build() takes it, or null once it is over.
+function clipNow() {
+  if (!playing) return null;
+  const t = Math.floor((performance.now() - playing.start) / TICK_MS), clip = P.clipFor(state.theme, playing.name);
+  if (!clip || t >= clip.len) { playing = null; return null; }
+  return {name: playing.name, t, n: playing.n, gx: playing.gx, gy: playing.gy};
+}
 function cellAt(e) {
   const r = canvas.getBoundingClientRect();
   if (!r.width || !r.height) return null;
   const gx = Math.floor((e.clientX - r.left) / r.width * P.GW), gy = Math.floor((e.clientY - r.top) / r.height * P.GH);
   return gx >= 0 && gy >= 0 && gx < P.GW && gy < P.GH ? [gx, gy] : null;
 }
-function reactNow() {
-  if (!react) return null;
-  const t = Math.floor((performance.now() - react.start) / TICK_MS);
-  if (t >= P.REACTIONS[react.kind].len) { react = null; return null; }
-  return {kind: react.kind, t, n: react.n, gx: react.gx, gy: react.gy};
-}
 function zoneAt(e) {
   const c = cellAt(e);
-  return c ? {cell: c, zone: P.hitTest(D, frame, {reduced, theme: state.theme, react: reactNow()}, c[0], c[1])} : null;
+  return c ? {cell: c, zone: P.hitTest(D, frame, {reduced, theme: state.theme, clip: clipNow()}, c[0], c[1])} : null;
 }
 function poke(e) {
   const hit = zoneAt(e);
   if (!hit || hit.zone === undefined) return;
   const now = performance.now();
-  if (react && (react.kind === 'angry' || react.kind === 'grumpy')) return;  // let it fume
+  if (clipNow() && (playing.name === 'angry' || playing.name === 'grumpy')) return;  // let it fume
   pokes = pokes.filter(t => now - t < COMBO_MS); pokes.push(now);
-  const kind = P.reactionFor(D, hit.zone, pokes.length);
-  if (kind === 'angry' || kind === 'grumpy') pokes = [];
+  const name = P.reactionFor(D, hit.zone, pokes.length);
+  if (name === 'angry' || name === 'grumpy') pokes = [];
   // n: a streak of the same reaction (a third pat in a row blushes)
-  const n = lastReact && lastReact.kind === kind && now - lastReact.start < COMBO_MS ? lastReact.n + 1 : 1;
-  react = lastReact = {kind, start: now, n, gx: hit.cell[0], gy: hit.cell[1]};
-  paint();
+  const n = lastPoke && lastPoke.name === name && now - lastPoke.at < COMBO_MS ? lastPoke.n + 1 : 1;
+  lastPoke = {name, at: now, n};
+  play(name, {n, gx: hit.cell[0], gy: hit.cell[1]});
 }
 $('#screen').addEventListener('mousedown', e => {
   if (e.button !== 0 || e.target.closest('button,input,select,a,label')) return;

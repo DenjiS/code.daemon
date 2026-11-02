@@ -34,7 +34,7 @@ function plans(st, f, mo) {
   let eyes = [], mouth = null, a = {}, main = null;
   switch (st) {
     case 0: { // DARUMA: a tumbler doll. One eye is painted at the first commit, the other fills in as it nears hatching.
-      const w = (f % 48) - 43, rock = mo.motion && mo.has && w > 0 ? [0, 1, -1, 1, 0][w] : 0;
+      const rock = mo.has ? mo.rock : 0;
       const ex = cx + rock, cy = G - 11 + 0.5, fy = Math.round(cy) - 2;
       main = S.red;
       const b = part('body');

@@ -1,4 +1,4 @@
-// Click reactions: what a click touches (hitTest), what the pet does about it (reactionFor), and how build() draws it.
+// Clicks: what a click touches (hitTest), which clip the pet plays about it (reactionFor), and how build() draws it.
 const test = require('node:test');
 const assert = require('node:assert');
 const {P} = require('./helpers.cjs');
@@ -19,11 +19,8 @@ test('hitTest finds head, body, limbs, tail and wings, and misses empty screen',
   assert.strictEqual(at(0, 32, 31), 'egg');
 });
 
-test('only themes with reacts: true answer clicks; the others answer undefined and ignore opts.react', () => {
-  for (const theme of P.themes().filter(t => !t.reacts).map(t => t.id)) {
-    assert.strictEqual(P.hitTest(pet(4), 8, {theme}, 32, 28), undefined, theme);
-    assert.ok(same(P.build(pet(4), 8, {theme}), P.build(pet(4), 8, {theme, react: {kind: 'hop', t: 3, n: 1, gx: 0, gy: 0}})), theme);
-  }
+test('only themes with reacts: true answer clicks; the others answer undefined', () => {
+  for (const theme of P.themes().filter(t => !t.reacts).map(t => t.id)) assert.strictEqual(P.hitTest(pet(4), 8, {theme}, 32, 28), undefined, theme);
   assert.strictEqual(P.canReact('classic'), true);
   assert.strictEqual(P.canReact('derp'), false);
   assert.deepStrictEqual(P.themes().filter(t => t.reacts).map(t => t.id), ['classic', 'demonic', 'succubus']);
@@ -45,13 +42,14 @@ test('reactionFor: zone, sleep, sickness, egg and a streak of clicks', () => {
 });
 
 const REACTING = P.themes().filter(t => t.reacts).map(t => t.id);
+const REACTIONS = ['pat', 'tickle', 'wave', 'hop', 'tail', 'flutter', 'look', 'angry', 'grumpy', 'stir', 'wobble', 'flinch'];
 
 test('every reaction draws on every stage of every theme that reacts, and changes the picture', () => {
-  for (const theme of REACTING) for (const kind of Object.keys(P.REACTIONS)) for (let st = 0; st <= 10; st++) for (const reduced of [false, true]) {
+  for (const theme of REACTING) for (const kind of REACTIONS) for (let st = 0; st <= 10; st++) for (const reduced of [false, true]) {
     const D = pet(st, kind === 'stir' || kind === 'grumpy' ? {energy: 10} : {}), o = {...O, theme, reduced};
     let changed = false;
-    for (let t = 0; t < P.REACTIONS[kind].len; t++) {
-      const b = P.build(D, 8 + t, {...o, react: {kind, t, n: 3, gx: 5, gy: 40}});
+    for (let t = 0; t < P.CLIPS[kind].len; t++) {
+      const b = P.build(D, 8 + t, {...o, clip: {name: kind, t, n: 3, gx: 5, gy: 40}});
       for (const k of b.keys()) assert.ok(k >= 0 && k < P.GW * P.GH);
       if (!same(b, P.build(D, 8 + t, o))) changed = true;
     }
@@ -68,7 +66,7 @@ test('every stage of every theme that reacts can be clicked on the head and the 
 });
 
 test('a click lands on what is on screen mid-hop', () => {
-  const D = pet(4), react = {kind: 'hop', t: 4, n: 1, gx: 0, gy: 0};  // 5 cells up at t = 4
-  assert.strictEqual(P.hitTest(D, 12, {...O, react}, 27, 33), 'legs');
+  const D = pet(4), clip = {name: 'hop', t: 4, n: 1, gx: 0, gy: 0};  // 5 cells up at t = 4
+  assert.strictEqual(P.hitTest(D, 12, {...O, clip}, 27, 33), 'legs');
   assert.strictEqual(P.hitTest(D, 12, O, 27, 33), 'body');
 });
