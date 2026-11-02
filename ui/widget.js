@@ -113,15 +113,14 @@ function renderLangs() {
 }
 
 /* ---------- themes ---------- */
-const THEME_DOT = {classic: 'var(--muted)', derp: '#FFE27A', slavic: '#3D6BE0', asian: '#3FB28A', demonic: '#D8322A', succubus: '#FF5C9E'};
 function applyTheme() {
   const tc = P.themeColors(state.theme), el = $('.screen');
   if (el) { if (tc) { el.style.setProperty('--screen', tc.screen); el.style.setProperty('--screen-dot', tc.dot); } else { el.style.removeProperty('--screen'); el.style.removeProperty('--screen-dot'); } }
 }
 function renderThemes() {
   const box = $('#themes'); if (!box) return;
-  box.innerHTML = P.THEME_LIST.filter(t => P.hasTheme(t.id)).map(t =>
-    `<label class="chip" style="--c:${THEME_DOT[t.id] || 'var(--muted)'}"><input type="radio" name="theme" value="${t.id}"${state.theme === t.id ? ' checked' : ''}><span>${esc(N().theme(t.id))}</span></label>`).join('');
+  box.innerHTML = P.themes().map(t =>
+    `<label class="chip" style="--c:${t.accent || 'var(--muted)'}"><input type="radio" name="theme" value="${t.id}"${state.theme === t.id ? ' checked' : ''}><span>${esc(N().theme(t.id))}</span></label>`).join('');
 }
 function setTheme(id) {
   if (!P.hasTheme(id) || id === state.theme) return;

@@ -19,13 +19,14 @@ test('hitTest finds head, body, limbs, tail and wings, and misses empty screen',
   assert.strictEqual(at(0, 32, 31), 'egg');
 });
 
-test('only Classic reacts: other themes answer undefined and ignore opts.react', () => {
-  for (const theme of ['derp', 'slavic', 'asian', 'demonic']) {
+test('only themes with reacts: true answer clicks; the others answer undefined and ignore opts.react', () => {
+  for (const theme of P.themes().filter(t => !t.reacts).map(t => t.id)) {
     assert.strictEqual(P.hitTest(pet(4), 8, {theme}, 32, 28), undefined, theme);
     assert.ok(same(P.build(pet(4), 8, {theme}), P.build(pet(4), 8, {theme, react: {kind: 'hop', t: 3, n: 1, gx: 0, gy: 0}})), theme);
   }
   assert.strictEqual(P.canReact('classic'), true);
-  assert.strictEqual(P.canReact('constructor'), false);
+  assert.strictEqual(P.canReact('derp'), false);
+  assert.deepStrictEqual(P.themes().filter(t => t.reacts).map(t => t.id), ['classic', 'demonic', 'succubus']);
 });
 
 test('reactionFor: zone, sleep, sickness, egg and a streak of clicks', () => {
@@ -43,16 +44,26 @@ test('reactionFor: zone, sleep, sickness, egg and a streak of clicks', () => {
   assert.strictEqual(P.reactionFor(pet(0), 'egg', 1), 'wobble');
 });
 
-test('every reaction draws on every stage, changes the picture, and ends where it started', () => {
-  for (const kind of Object.keys(P.REACTIONS)) for (let st = 0; st <= 10; st++) for (const reduced of [false, true]) {
-    const D = pet(st, kind === 'stir' || kind === 'grumpy' ? {energy: 10} : {}), o = {...O, reduced};
+const REACTING = P.themes().filter(t => t.reacts).map(t => t.id);
+
+test('every reaction draws on every stage of every theme that reacts, and changes the picture', () => {
+  for (const theme of REACTING) for (const kind of Object.keys(P.REACTIONS)) for (let st = 0; st <= 10; st++) for (const reduced of [false, true]) {
+    const D = pet(st, kind === 'stir' || kind === 'grumpy' ? {energy: 10} : {}), o = {...O, theme, reduced};
     let changed = false;
     for (let t = 0; t < P.REACTIONS[kind].len; t++) {
       const b = P.build(D, 8 + t, {...o, react: {kind, t, n: 3, gx: 5, gy: 40}});
       for (const k of b.keys()) assert.ok(k >= 0 && k < P.GW * P.GH);
       if (!same(b, P.build(D, 8 + t, o))) changed = true;
     }
-    if (st > 0 || kind === 'wobble') assert.ok(changed, `${kind} on stage ${st}${reduced ? ' (reduced)' : ''} shows nothing`);
+    if (st > 0 || kind === 'wobble') assert.ok(changed, `${theme}: ${kind} on stage ${st}${reduced ? ' (reduced)' : ''} shows nothing`);
+  }
+});
+
+test('every stage of every theme that reacts can be clicked on the head and the body', () => {
+  for (const theme of REACTING) for (let st = 1; st <= 10; st++) {
+    const zones = new Set();
+    for (let y = 0; y < P.GH; y++) for (let x = 0; x < P.GW; x++) zones.add(P.hitTest(pet(st), 8, {theme}, x, y));
+    for (const z of ['head', 'body', null]) assert.ok(zones.has(z), `${theme} stage ${st} has no ${z === null ? 'empty screen' : z}`);
   }
 });
 

@@ -163,7 +163,7 @@ const SECTIONS = [
 
   {id: 'themes', title: 'w.th', peek: (D, c) => c.n.theme(c.theme), body: (D, c) => [
     p$(c.T('w.th.p1')),
-    ul$(P.THEME_LIST.filter(t => P.hasTheme(t.id)).map(t => `<b>${esc(c.n.theme(t.id))}</b>${t.id === c.theme ? ' ' + esc(c.T('w.th.cur')) : ''}: ${esc(STAGES.map((s, i) => c.n.bodyLower(i, t.id)).join(' → '))}`)),
+    ul$(P.themes().map(t => `<b>${esc(c.n.theme(t.id))}</b>${t.id === c.theme ? ' ' + esc(c.T('w.th.cur')) : ''}: ${esc(STAGES.map((s, i) => c.n.bodyLower(i, t.id)).join(' → '))}`)),
     p$(c.T('w.th.p2')),
   ]},
 ];

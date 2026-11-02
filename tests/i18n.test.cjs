@@ -9,7 +9,6 @@ const UI = path.join(ROOT, 'ui');
 
 global.window = global;
 window.PetCore = require(path.join(UI, 'pet-core.js'));
-for (const f of ['demonic', 'succubus']) window.PetCore.registerTheme(f, require(path.join(UI, 'themes', f + '.js')));
 require(path.join(UI, 'i18n.js'));
 const I = window.I18n;
 const page = fs.readFileSync(path.join(UI, 'widget.html'), 'utf8');

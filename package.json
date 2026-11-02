@@ -3,6 +3,7 @@
   "private": true,
   "description": "A pixel pet for Windows that grows from your coding habits.",
   "scripts": {
+    "build": "node tools/build.cjs",
     "test": "node --test \"tests/*.test.cjs\""
   },
   "devDependencies": {

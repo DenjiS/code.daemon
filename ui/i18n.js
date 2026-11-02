@@ -46,7 +46,6 @@ function names(id) {
   const P = window.PetCore, L = tag(id);
   const tr = k => { const v = lookup(id, k); return v === undefined ? null : String(v); };
   const cap = s => s.charAt(0).toLocaleUpperCase(L) + s.slice(1);
-  const theme = x => P.THEME_LIST.find(e => e.id === x);
   return {
     stage: i => tr('stage.' + i) || P.STAGES[i].name,
     body: (i, th) => { const v = tr(`body.${th}.${i}`); return v ? cap(v) : P.stageBody(i, th); },
@@ -55,7 +54,7 @@ function names(id) {
     formRule: k => tr('rule.' + k) || P.FORMS[k].rule,
     mut: k => tr('mut.' + k) || P.MUTATIONS[k].name,
     mutRule: k => tr('mrule.' + k) || P.MUTATIONS[k].rule,
-    theme: x => tr('theme.' + x) || (theme(x) ? theme(x).name : x),
+    theme: x => tr('theme.' + x) || (P.themes().find(e => e.id === x) || {name: x}).name,
     src: x => tr('src.' + x) || (P.SRC[x] ? P.SRC[x].label : x),
     upper: s => String(s).toLocaleUpperCase(L),
     lower: s => String(s).toLocaleLowerCase(L),
@@ -65,7 +64,7 @@ function names(id) {
 function nameKeys() {
   const P = window.PetCore, k = [];
   P.STAGES.forEach((s, i) => k.push('stage.' + i));
-  for (const th of P.THEME_LIST) if (P.hasTheme(th.id)) { P.STAGES.forEach((s, i) => k.push(`body.${th.id}.${i}`)); k.push('theme.' + th.id); }
+  for (const th of P.themes()) { P.STAGES.forEach((s, i) => k.push(`body.${th.id}.${i}`)); k.push('theme.' + th.id); }
   for (const f in P.FORMS) k.push('form.' + f, 'rule.' + f);
   for (const m in P.MUTATIONS) k.push('mut.' + m, 'mrule.' + m);
   k.push('src.local');

@@ -10,7 +10,6 @@ and saves it as an animated `code-daemon/pet.svg` in your profile repo.
    - `.github/workflows/code-daemon.yml`
    - `.github/code-daemon/render.cjs`
    - `.github/code-daemon/pet-core.js`
-   - `.github/code-daemon/themes/` (Demonic and Succubus sprites)
 3. Add this to your `README.md` wherever you want the pet:
 
    ```html

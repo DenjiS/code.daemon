@@ -6,3 +6,7 @@
 *.woff2 binary
 *.png binary
 *.zip binary
+
+# built by tools/build.cjs from src/
+ui/pet-core.js linguist-generated=true
+github-profile/.github/code-daemon/pet-core.js linguist-generated=true

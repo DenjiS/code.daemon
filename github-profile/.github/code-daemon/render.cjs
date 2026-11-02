@@ -27,11 +27,7 @@ const token = process.env.PET_TOKEN || process.env.GITHUB_TOKEN;
 const login = process.env.PET_LOGIN || process.env.GITHUB_REPOSITORY_OWNER;
 const petName = String(process.env.PET_NAME || 'dmn').slice(0, 16);
 const petTheme = String(process.env.PET_THEME || 'classic').toLowerCase().trim();
-if (!P.hasTheme(petTheme)) {  // classic, derp, slavic and asian are drawn by pet-core; sprite themes live in themes/
-  const file = path.join(__dirname, 'themes', petTheme.replace(/[^a-z0-9-]/g, '') + '.js');
-  if (fs.existsSync(file)) P.registerTheme(petTheme, require(file));
-  else console.warn(`Theme "${petTheme}" not found in .github/code-daemon/themes, using classic.`);
-}
+if (!P.hasTheme(petTheme)) console.warn(`Theme "${petTheme}" not found (${P.themes().map(t => t.id).join(', ')}), using classic.`);
 const outDir = path.resolve(process.env.PET_OUT || 'code-daemon');
 const usingPat = !!process.env.PET_TOKEN;
 const secret = process.env.PET_SALT || process.env.PET_TOKEN || '';

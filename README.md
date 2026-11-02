@@ -12,11 +12,11 @@ A pixel pet for Windows that grows from your coding habits. It reads your commit
 | `ui/widget.html`, `ui/widget.js` | Widget UI: pet screen, vitals, Feed / Log / Setup / Wiki panel |
 | `ui/wiki.js` | In-widget wiki: every mechanic, with the pet's live numbers (open with **?** or by clicking a vital) |
 | `ui/i18n.js`, `ui/i18n/` | Translations: English, Russian, Spanish, German, Portuguese (Brazil), Chinese (Simplified), Korean, Japanese |
-| `ui/pet-core.js` | Shared pet engine: XP, stages, forms, mutations, CI health, pixel renderer, SVG card |
-| `ui/themes/` | Sprite themes (Demonic, Succubus), generated from the sheets in `sprites/` |
-| `sprites/` | Source sprite sheets: 11 stages × 4 frames of 64 × 48 |
+| `src/` | Pet engine source: `core/` (XP, stages, forms, mutations, CI health, GitHub scan), `render/` (pixel renderer in layers, theme registry, click reactions, SVG card), `themes/` (one file per theme) |
+| `ui/pet-core.js` | The engine as one file for the widget, built from `src/` by `tools/build.cjs` (`npm run build`) |
 | `github-profile/` | GitHub Action that puts the same pet, animated, on your GitHub profile |
 | `lib/` | Microsoft WebView2 SDK (WinForms) and native loaders |
+| `tools/build.cjs` | Builds `ui/pet-core.js` and the profile Action's copy of the engine |
 | `tests/` | Engine, profile Action and widget tests: `npm install`, then `npm test` (Node 22+) |
 
 ## Run the widget
@@ -71,10 +71,8 @@ Pick one in **Setup → Theme**. The choice is saved with the pet. XP, stages, f
 | Derpy | The Classic line drawn badly on purpose: googly eyes that wander off on their own, buck teeth, tongues out | leggy egg → blep → crab → potato → derpasaur → sausage → noodle → gremlin → long boi → chonk → big eye |
 | Slavic | Characters from Slavic fairy tales in their own colors, with folk ornament, on a night-blue screen | pysanka → kolobok → frog tsarevna → domovoi → leshy → humpbacked horse → poloz → Baba Yaga → firebird → Zmei Gorynych → Koschei |
 | Asian | Creatures from Japanese and Chinese folklore in their own colors, on an ink-green screen | daruma → mochi → koi → kappa → maneki-neko → kitsune → shachihoko → oni → tengu → ryu → Raijin |
-| Demonic | Hell-red sprites on a dark red screen | obsidian egg → shadow slime → spider imp → impling → hell kaiju → hellhound → hell serpent → demon → infernal wyvern → archdemon → void lord |
-| Succubus | Succubus line, recolored per affinity (GitHub blue, GitLab orange, Local teal, Unity green, Unreal violet) | heart egg → imp slime → bat imp → chibi imp → chibi succubus → young succubus → lamia → succubus → flying succubus → succubus queen → ascended |
-
-Sprite themes keep the status effects: sick tint and alarm, sleep Z's, shiny sparkles, crown, curse marks, and a small accessory per form (shield, wrench, moon, crate, fire, source swatches, notes).
+| Demonic | The line from hell in crimson and obsidian, lava glowing through, on a dark red screen | obsidian egg → shadow slime → spider imp → impling → hell kaiju → hellhound → hell serpent → demon → infernal wyvern → archdemon → void lord |
+| Succubus | A little imp who grows up into a succubus queen; skin in your affinity color, hair, wings and outfit in darker shades of it | heart egg → imp slime → bat imp → chibi imp → chibi succubus → young succubus → lamia → succubus → flying succubus → succubus queen → ascended |
 
 Derpy keeps everything Classic has, including the crests, and adds its own bits: drool, a forked tongue, a fiddler-crab claw, a snot bubble on the chonk.
 
@@ -88,7 +86,24 @@ Asian creatures also bring their own colors, with the crest above the head. The 
 
 ![Asian stages: daruma, mochi, koi, kappa, maneki-neko, kitsune, shachihoko, oni, tengu, ryu, Raijin](docs/asian.png)
 
-To add a theme, draw an 11 × 4 sheet of 64 × 48 frames (rows = stages, columns = animation frames), convert it to `ui/themes/<id>.js` in the same format, add a `<script>` tag in `widget.html` and an entry in `THEME_LIST` in `pet-core.js`.
+Demonic creatures bring their own colors, with your affinity in the crest. Their eyes glow, embers drift off them, the egg cracks with lava light, the hellhound's back is on fire, the demon stands in flames with a trident, the archdemon sits in a ring of fire, and the void lord stares out of a crystal with one burning eye.
+
+![Demonic stages: obsidian egg, shadow slime, spider imp, impling, hell kaiju, hellhound, hell serpent, demon, infernal wyvern, archdemon, void lord](docs/demonic.png)
+
+Succubus follows your affinity: skin in its color, wings, hair and outfit in darker shades of it, pink hearts on top. She goes from a heart-dotted egg and a blob with a heart-tipped tail to a chibi imp, and from the lamia on she is grown up: bare shoulders over a corset with a sweetheart neckline, thigh-high boots with pink garters, painted lips, a hand on her hip. Then she flies with hearts trailing behind, sits cross-legged on a gold-trimmed throne as the queen, and ascends in a burst of light.
+
+![Succubus stages: heart egg, imp slime, bat imp, chibi imp, chibi succubus, young succubus, lamia, succubus, flying succubus, succubus queen, ascended](docs/succubus.png)
+
+Classic, Demonic and Succubus answer clicks: pat the head, tickle the belly, poke a leg, a tail or a wing, and the pet reacts. Drag the screen to move the widget as before.
+
+### Adding a theme
+
+Every theme is one file in `src/themes/` that draws its creatures from shapes (ellipses, tapered limbs, polygons), frame by frame, so it animates, takes forms, crests and status effects, and can react to clicks like the rest. The registry (`src/render/themes.js`) documents every field; `src/render/build.js` lists the layers a frame is drawn in.
+
+1. Copy the theme closest to what you want (`classic.js` for affinity colors, `slavic.js` for creatures with their own colors, `succubus.js` for colors derived from the affinity) to `src/themes/<id>.js`.
+2. Change `id`, `name`, `accent` (its chip color), optionally `screen`/`dot` and `bodies`, and redraw the 11 stages in `plans()`.
+3. Add `defineTheme(require('./themes/<id>'));` to `src/index.js` and run `npm run build`.
+4. Add `theme.<id>` and `body.<id>.0`–`10` to each `ui/i18n/<lang>.js`; `npm test` lists what is missing and checks every stage in every state.
 
 ## Languages
 
@@ -102,7 +117,9 @@ See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.
 
 ## Development
 
-`npm test` runs the tests. `ui/pet-core.js` and `ui/themes/` have copies in `github-profile/.github/code-daemon/`; after changing them, copy them over (a test checks they match). `tests/host.tests.ps1` checks `CodeDaemon.ps1` (parse, file writer, query filter); CI runs it with Windows PowerShell 5.1.
+The engine lives in `src/` as plain CommonJS modules. `npm run build` bundles it into `ui/pet-core.js` (loaded by the widget with a `<script>` tag) and copies it to `github-profile/.github/code-daemon/`. Never edit those two generated files by hand; `npm test` fails while they are out of date. No dependencies besides Node 22+.
+
+`npm test` runs the tests. `tests/host.tests.ps1` checks `CodeDaemon.ps1` (parse, file writer, query filter); CI runs it with Windows PowerShell 5.1.
 
 ## Data
 
