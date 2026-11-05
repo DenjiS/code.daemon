@@ -32,9 +32,9 @@ I18n.add('zh', {
   'pet.form': '<b>{form}</b> · {body}', 'pet.locks': '{body} · 再 {n} XP 定形',
   'pet.locksTip': '从 {stage} 起，每次进化都会根据你最近 30 天的习惯锁定一种形态。',
   'pet.crest': '{src} 冠饰', 'pet.xp': '{xp} / {next} XP', 'pet.xpMax': '{xp} XP · 满级',
-  'vital.energy': '能量', 'vital.mood': '心情', 'vital.rest': '休息', 'vital.build': '构建',
+  'vital.energy': '能量', 'vital.mood': '心情', 'vital.rest': '休息', 'vital.build': '健康',
   'vital.buildTip': '最近的仓库 {p}/{n} 为绿色', 'vital.buildNone': '最近 14 天碰过的仓库没有 CI 结果',
-  'aria.pet': '{name}，{what}。能量 {e}，心情 {m}，休息 {r}。', 'aria.petBuild': '{name}，{what}。能量 {e}，心情 {m}，休息 {r}，构建 {h}。',
+  'aria.pet': '{name}，{what}。能量 {e}，心情 {m}，休息 {r}。', 'aria.petBuild': '{name}，{what}。能量 {e}，心情 {m}，休息 {r}，健康 {h}。',
   'aria.egg': '{name} 还是一枚蛋。',
   'fx.fixed': '构建已修复', 'fx.fixedN': '修复了 {n} 个构建',
   'log.evo': '进化：{list}', 'log.next': '下一种形态在 {stage} 锁定。你现在的习惯指向<b>{form}</b>。',
@@ -143,7 +143,7 @@ I18n.add('zh', {
 });
 I18n.add('zh', {
   'w.bu.p1': '你最近 14 天碰过的仓库的 CI 健康度，取你最后推送的分支上的最新运行。',
-  'w.bu.f': '构建 = 100<br>&nbsp; − 45 × 红色仓库数<br>&nbsp; − 红色超过一天再扣 15',
+  'w.bu.f': '健康 = 100<br>&nbsp; − 45 × 红色仓库数<br>&nbsp; − 红色超过一天再扣 15',
   'w.bu.p2': '任何红色构建都会让宠物<b>生病</b>：脸色发白、冒汗并显示警报。低于 <b>30</b> 为危急：颜色更重、眼皮下垂、咳嗽。',
   'w.bu.p3': '<b>构建已修复</b>：同一分支由红转绿时 +{fix} XP，每个仓库每天最多一次。切换到另一个绿色分支不算修复。运行中的构建会记住之前的红色。',
   'w.bu.green': '绿色', 'w.bu.greenV': '{p}/{n} 个仓库', 'w.bu.tracked': '跟踪', 'w.bu.trackedV': '14 天内无 CI',

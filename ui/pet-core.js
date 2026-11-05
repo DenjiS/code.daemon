@@ -1644,7 +1644,7 @@ function renderSVG(D, o) {
   const st = D.stage, next = STAGES[st + 1];
   const fill = next ? clamp((D.xp - STAGES[st].xp) / (next.xp - STAGES[st].xp), 0, 1) : 1;
   const formName = D.form ? FORMS[D.form].name : null, body = stageBody(st, o.theme);
-  const vit = [['ENERGY', D.energy], ['MOOD', D.mood], ['REST', D.rest], ['BUILD', D.ciTracked ? D.health : null]];
+  const vit = [['ENERGY', D.energy], ['MOOD', D.mood], ['REST', D.rest], ['HEALTH', D.ciTracked ? D.health : null]];
   const color = v => v == null ? muted : v >= 60 ? good : v >= 30 ? warn : bad;
   const X = 352, BW = 160;
   let vitals = '';

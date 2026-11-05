@@ -32,9 +32,9 @@ I18n.add('ja', {
   'pet.form': '<b>{form}</b> · {body}', 'pet.locks': '{body} · フォームまで {n} XP',
   'pet.locksTip': '{stage}から先は、進化のたびに直近30日の習慣でフォームが決まります。',
   'pet.crest': '{src}のとさか', 'pet.xp': '{xp} / {next} XP', 'pet.xpMax': '{xp} XP · 最大',
-  'vital.energy': '元気', 'vital.mood': '機嫌', 'vital.rest': '休息', 'vital.build': 'ビルド',
+  'vital.energy': '元気', 'vital.mood': '機嫌', 'vital.rest': '休息', 'vital.build': '健康',
   'vital.buildTip': '最近のリポジトリ {p}/{n} が緑', 'vital.buildNone': '直近14日に触ったリポジトリに CI の結果がありません',
-  'aria.pet': '{name}、{what}。元気 {e}、機嫌 {m}、休息 {r}。', 'aria.petBuild': '{name}、{what}。元気 {e}、機嫌 {m}、休息 {r}、ビルド {h}。',
+  'aria.pet': '{name}、{what}。元気 {e}、機嫌 {m}、休息 {r}。', 'aria.petBuild': '{name}、{what}。元気 {e}、機嫌 {m}、休息 {r}、健康 {h}。',
   'aria.egg': '{name}はまだタマゴです。',
   'fx.fixed': 'ビルド修復', 'fx.fixedN': '{n}件のビルド修復',
   'log.evo': '進化：{list}', 'log.next': '次のフォームは{stage}で決まります。いまの習慣だと<b>{form}</b>です。',
@@ -143,7 +143,7 @@ I18n.add('ja', {
 });
 I18n.add('ja', {
   'w.bu.p1': '直近14日に触ったリポジトリの CI の状態。最後に push したブランチの最新の実行で判断します。',
-  'w.bu.f': 'ビルド = 100<br>&nbsp; − 赤いリポジトリごとに 45<br>&nbsp; − 1日以上赤ならさらに 15',
+  'w.bu.f': '健康 = 100<br>&nbsp; − 赤いリポジトリごとに 45<br>&nbsp; − 1日以上赤ならさらに 15',
   'w.bu.p2': '赤いビルドが1つでもあるとペットは<b>病気</b>になります：顔色が悪くなり、汗をかき、警告を出します。<b>30</b> を下回ると危篤：色がさらに濃くなり、まぶたが下がり、咳をします。',
   'w.bu.p3': '<b>ビルド修復</b>：同じブランチが赤から緑になると +{fix} XP、リポジトリごとに1日1回まで。別の緑のブランチに移っても修復にはなりません。実行中のビルドは前の赤を覚えています。',
   'w.bu.green': '緑', 'w.bu.greenV': '{p}/{n} リポジトリ', 'w.bu.tracked': '追跡', 'w.bu.trackedV': '14日間 CI なし',

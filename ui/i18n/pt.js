@@ -33,9 +33,9 @@ I18n.add('pt', {
   'pet.form': '<b>{form}</b> · {body}', 'pet.locks': '{body} · forma em {n} XP',
   'pet.locksTip': 'A partir de {stage}, cada evolução fixa uma forma com base nos seus hábitos dos últimos 30 dias.',
   'pet.crest': 'crista {src}', 'pet.xp': '{xp} / {next} XP', 'pet.xpMax': '{xp} XP · máx.',
-  'vital.energy': 'Energia', 'vital.mood': 'Humor', 'vital.rest': 'Descanso', 'vital.build': 'Build',
+  'vital.energy': 'Energia', 'vital.mood': 'Humor', 'vital.rest': 'Descanso', 'vital.build': 'Saúde',
   'vital.buildTip': '{p}/{n} repositórios recentes verdes', 'vital.buildNone': 'Sem resultados de CI nos repositórios que você mexeu nos últimos 14 dias',
-  'aria.pet': '{name}, {what}. Energia {e}, humor {m}, descanso {r}.', 'aria.petBuild': '{name}, {what}. Energia {e}, humor {m}, descanso {r}, build {h}.',
+  'aria.pet': '{name}, {what}. Energia {e}, humor {m}, descanso {r}.', 'aria.petBuild': '{name}, {what}. Energia {e}, humor {m}, descanso {r}, saúde {h}.',
   'aria.egg': '{name} ainda é um ovo.',
   'fx.fixed': 'BUILD CORRIGIDO', 'fx.fixedN': {one: '{n} BUILD CORRIGIDO', other: '{n} BUILDS CORRIGIDOS'},
   'log.evo': 'Evolução: {list}', 'log.next': 'A próxima forma é fixada em {stage}. Agora seus hábitos apontam para <b>{form}</b>.',
@@ -145,7 +145,7 @@ I18n.add('pt', {
 });
 I18n.add('pt', {
   'w.bu.p1': 'Saúde do CI dos repositórios que você mexeu nos últimos 14 dias, pela última execução no branch em que você fez push por último.',
-  'w.bu.f': 'Build = 100<br>&nbsp; − 45 por repositório vermelho<br>&nbsp; − mais 15 se estiver vermelho há um dia',
+  'w.bu.f': 'Saúde = 100<br>&nbsp; − 45 por repositório vermelho<br>&nbsp; − mais 15 se estiver vermelho há um dia',
   'w.bu.p2': 'Qualquer build vermelho deixa o bichinho <b>doente</b>: ele empalidece, sua e mostra um alarme. Abaixo de <b>30</b> é crítico: tom mais forte, pálpebras caídas, tosse.',
   'w.bu.p3': '<b>Build corrigido</b>: quando o mesmo branch passa de vermelho para verde, +{fix} XP, no máximo uma vez por dia por repositório. Trocar para outro branch verde não conta. Uma execução em andamento lembra o vermelho.',
   'w.bu.green': 'Verdes', 'w.bu.greenV': '{p}/{n} repositórios', 'w.bu.tracked': 'Acompanhados', 'w.bu.trackedV': 'sem CI em 14 dias',

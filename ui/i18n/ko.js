@@ -32,9 +32,9 @@ I18n.add('ko', {
   'pet.form': '<b>{form}</b> · {body}', 'pet.locks': '{body} · {n} XP 후 형태 고정',
   'pet.locksTip': '{stage} 단계부터 진화할 때마다 최근 30일 습관으로 형태가 고정됩니다.',
   'pet.crest': '{src} 볏', 'pet.xp': '{xp} / {next} XP', 'pet.xpMax': '{xp} XP · 최대',
-  'vital.energy': '에너지', 'vital.mood': '기분', 'vital.rest': '휴식', 'vital.build': '빌드',
+  'vital.energy': '에너지', 'vital.mood': '기분', 'vital.rest': '휴식', 'vital.build': '건강',
   'vital.buildTip': '최근 저장소 {p}/{n}개 초록색', 'vital.buildNone': '최근 14일 동안 건드린 저장소에 CI 결과가 없습니다',
-  'aria.pet': '{name}, {what}. 에너지 {e}, 기분 {m}, 휴식 {r}.', 'aria.petBuild': '{name}, {what}. 에너지 {e}, 기분 {m}, 휴식 {r}, 빌드 {h}.',
+  'aria.pet': '{name}, {what}. 에너지 {e}, 기분 {m}, 휴식 {r}.', 'aria.petBuild': '{name}, {what}. 에너지 {e}, 기분 {m}, 휴식 {r}, 건강 {h}.',
   'aria.egg': '{name}은(는) 아직 알입니다.',
   'fx.fixed': '빌드 수리됨', 'fx.fixedN': '빌드 {n}개 수리됨',
   'log.evo': '진화: {list}', 'log.next': '다음 형태는 {stage}에서 고정됩니다. 지금 습관은 <b>{form}</b> 쪽입니다.',
@@ -143,7 +143,7 @@ I18n.add('ko', {
 });
 I18n.add('ko', {
   'w.bu.p1': '최근 14일 동안 건드린 저장소의 CI 상태로, 마지막으로 푸시한 브랜치의 최신 실행을 봅니다.',
-  'w.bu.f': '빌드 = 100<br>&nbsp; − 빨간 저장소마다 45<br>&nbsp; − 하루 넘게 빨가면 15 더',
+  'w.bu.f': '건강 = 100<br>&nbsp; − 빨간 저장소마다 45<br>&nbsp; − 하루 넘게 빨가면 15 더',
   'w.bu.p2': '빨간 빌드가 하나라도 있으면 펫이 <b>아픕니다</b>: 창백해지고 땀을 흘리며 경보를 띄웁니다. <b>30</b> 아래면 위독: 색이 더 짙어지고 눈꺼풀이 처지며 기침을 합니다.',
   'w.bu.p3': '<b>빌드 수리됨</b>: 같은 브랜치가 빨강에서 초록이 되면 +{fix} XP, 저장소당 하루 최대 한 번. 다른 초록 브랜치로 옮기는 건 수리가 아닙니다. 실행 중인 빌드는 이전의 빨강을 기억합니다.',
   'w.bu.green': '초록', 'w.bu.greenV': '저장소 {p}/{n}', 'w.bu.tracked': '추적', 'w.bu.trackedV': '14일 동안 CI 없음',
