@@ -34,6 +34,33 @@ test('under reduced motion a clip still shows its face and effect, but the body 
   assert.strictEqual(box(during), box(still), 'no jump');
 });
 
+test('CI clips react in every theme, including eggs and googly faces, and settle back to the base', () => {
+  for (const name of ['ciFail', 'ciFixed']) for (const T of P.themes()) for (let st = 0; st <= 10; st++) {
+    const D = pet(st, {sick: name === 'ciFail'}), len = P.clipFor(T.id, name).len;
+    assert.ok(changes(T.id, st, name, {sick: D.sick}) >= 8, `${name}: ${T.id} stage ${st}`);
+    const opts = {theme: T.id}, f = 8 + len - 1;
+    assert.ok(same(P.build(D, f, opts), P.build(D, f, {...opts, clip: {name, t: len - 1}})), `${name}: settles ${T.id} stage ${st}`);
+    for (const extra of [{energy: 10}, {critical: true}, {mutations: {shiny: true, cursed: true, crowned: true, committed: true}}]) {
+      const d = {...D, ...extra}, o = {...opts, reduced: true};
+      assert.ok(!same(P.build(d, 8, o), P.build(d, 8, {...o, clip: {name, t: 4}})), `${name}: still expression/effect ${T.id} stage ${st}`);
+    }
+  }
+});
+
+test('CI clips shiver on red, breathe and hop on green, and respect reduced motion', () => {
+  const {pose} = require('../src/render/pose');
+  const T = P.themes()[0], D = pet(5);
+  const at = (name, t, reduced) => pose(D, 8, {clip: {name, t}, reduced}, T).pose;
+  assert.deepStrictEqual([0, 1, 2, 3].map(t => at('ciFail', t).ox), [-1, 1, -1, 1]);
+  assert.strictEqual(at('ciFail', 0).face, 'wow');
+  assert.strictEqual(at('ciFixed', 0).face, 'joy');
+  assert.ok(at('ciFixed', 1).sq < 1 && at('ciFixed', 6).oy < 0);
+  for (const name of ['ciFail', 'ciFixed']) for (let t = 0; t < P.CLIPS[name].len; t++) {
+    const p = at(name, t, true);
+    assert.deepStrictEqual([p.ox, p.oy, p.sq], [0, 0, 1]);
+  }
+});
+
 test('a theme can bring its own version of a clip, and unknown clips are ignored', () => {
   const plans = () => ({parts: [{m: new Set([20 * P.GW + 30, 20 * P.GW + 31]), role: 'body'}], eyes: [], mouth: null});
   const t = P.defineTheme({id: 'clip-test', name: 'Clip test', plans, clips: {hop: {len: 3, ox: 5}}});

@@ -208,7 +208,76 @@ select.inp{padding:4px 5px;cursor:pointer}
 .wkbar em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
 .tog{display:flex;align-items:center;gap:7px;font-size:11.5px;cursor:pointer}
 .tog input{accent-color:var(--ink);margin:0}
+.stats{display:contents}
+/* Setup: a line between sections */
+#tab-setup h3.sub:not(:first-of-type){border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+#tab-setup .themes+.acct{border-top:1px solid var(--line);padding-top:10px}
+/* The status line on the pet screen shows its full text on hover */
+#hudstatus{pointer-events:auto;cursor:default}
 .sub{margin:2px 0 0;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:400;display:flex;justify-content:space-between}
+/* Large view: a 720px window, stats in a column left of the screen, bigger type everywhere */
+:root.large body{font-size:14px}
+:root.large .bar{height:40px;padding:0 10px 0 16px}
+:root.large .logo{font-size:15px;gap:9px}
+:root.large .logo i{width:9px;height:9px}
+:root.large .ib{width:30px;height:30px}
+:root.large .ib svg{width:15px;height:15px}
+:root.large,:root.large body,:root.large .app{height:100%}
+:root.large .main{grid-template-columns:minmax(260px,1fr) auto;gap:16px;padding:0 16px 16px;flex:none}
+:root.large:not(.open) .main{flex:1;min-height:0}
+/* The window is resizable here: the screen fills its column but keeps 4:3 and fits the window's height */
+:root.large .screen{grid-column:2;grid-row:1;align-self:start;width:min(calc(100vw - 308px),calc((100vh - 56px) * 4 / 3))}
+/* With the panel open the screen stops growing at 420px tall: extra height goes to the panel */
+:root.large.open .screen{width:min(calc(100vw - 308px),calc(clamp(220px, 100vh - 400px, 420px) * 4 / 3))}
+:root.large .panel{flex:1;min-height:0}
+:root[data-edge="ew-resize"],:root[data-edge="ew-resize"] *{cursor:ew-resize!important}
+:root[data-edge="ns-resize"],:root[data-edge="ns-resize"] *{cursor:ns-resize!important}
+:root[data-edge="nwse-resize"],:root[data-edge="nwse-resize"] *{cursor:nwse-resize!important}
+:root[data-edge="nesw-resize"],:root[data-edge="nesw-resize"] *{cursor:nesw-resize!important}
+:root.large .stats{grid-column:1;grid-row:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+:root.large .hud{inset:10px 13px;font-size:14px}
+:root.large .fx{font-size:26px}
+:root.large .fx.evo{font-size:20px}
+:root.large .petname{font-size:24px;max-width:none}
+:root.large .petnameinput{font-size:18px;width:100%}
+:root.large .pill{font-size:13px;padding:3px 9px}
+:root.large .formrow{font-size:13px;margin-top:-6px;white-space:normal;line-height:1.5}
+:root.large .xprow{margin-top:0;gap:10px}
+:root.large .xpbar{height:8px;border-radius:3px}
+:root.large .xpcap{font-size:13px}
+/* The stats column is as tall as the screen; the vitals spread over it */
+:root.large .vitals{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:11px}
+:root.large .vital .top{font-size:13px}
+:root.large .vital .track{height:7px;border-radius:3px;margin-top:5px}
+:root.large .foot{font-size:13px;padding-top:9px;min-height:40px}
+:root.large .tabs{padding:6px 16px 0}
+:root.large .tabs button{font-size:13px;padding:9px 0 8px}
+:root.large .tabbody{height:auto;flex:1;min-height:0;padding:14px 16px 16px}
+:root.large .tab{gap:12px}
+:root.large .hint,:root.large .msg,:root.large .pv,:root.large .evo,:root.large .rules,:root.large .astate,:root.large .wkb,:root.large .wkf,:root.large .lxp,:root.large .repo{font-size:13px}
+:root.large .lbl,:root.large .sub,:root.large .l2,:root.large .ci,:root.large .repo .rc,:root.large .wkt th,:root.large .chip span em{font-size:12px}
+:root.large .l1,:root.large .wk summary,:root.large .tog,:root.large .chip span,:root.large .sbtn,:root.large .preset{font-size:14px}
+:root.large .wk summary em{font-size:13px}
+:root.large .inp,:root.large .btn{font-size:14px}
+:root.large .pv b{font-size:18px}
+:root.large .frow .lbl{min-width:80px}
+:root.large .num{width:74px}
+:root.large .step{width:32px;height:32px}
+:root.large .repo{grid-template-columns:8px minmax(0,1fr) auto auto 140px;gap:8px}
+:root.large .repo select{font-size:13px;width:140px}
+:root.large .wkbar{grid-template-columns:96px minmax(0,1fr) 70px}
+/* A wide large window splits the panel's content into columns (2 from 1100px, 3 from 1650px) */
+@media (min-width:1100px){
+  :root.large .tab{display:block;columns:2;column-gap:32px;column-rule:1px solid var(--line)}
+  :root.large .tab>*{break-inside:avoid;margin:0 0 12px}
+  :root.large .tab>.sub,:root.large .tab>.lbl{break-after:avoid}
+  :root.large #tab-wiki{column-gap:32px}
+  :root.large #tab-wiki>*{margin:0}
+  :root.large .log{display:block}
+  :root.large .lrow{break-inside:avoid}
+  :root.large .tab>.log{break-inside:auto}
+}
+@media (min-width:1650px){:root.large .tab{columns:3}}
 @media (prefers-reduced-motion: reduce){.fx.go{animation-duration:.01s}.ib.spin svg{animation:none}}
 </style>
 </head>
@@ -217,6 +286,7 @@ select.inp{padding:4px 5px;cursor:pointer}
   <header class="bar" id="bar">
     <span class="logo"><i></i><span>code<b>.</b>daemon</span></span>
     <span class="grow"></span>
+    <button class="ib" id="b-size" type="button" title="Large / compact view" data-i18n-title="bar.size" aria-pressed="false"><svg viewBox="0 0 12 12"><path d="M7 2h3v3M10 2 7 5M5 10H2V7M2 10l3-3"/></svg></button>
     <button class="ib" id="b-wiki" type="button" title="Wiki: how the pet works" data-i18n-title="bar.wiki" aria-label="Wiki" data-i18n-aria="tab.wiki"><svg viewBox="0 0 12 12"><path d="M4.2 4.4a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.8.7-.8 1.3v.2M6 9.4v.1"/></svg></button>
     <button class="ib" id="b-more" type="button" title="Feed, log, setup and wiki" data-i18n-title="bar.more" aria-expanded="false" aria-controls="panel"><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
     <button class="ib" id="b-hide" type="button" title="Hide to tray (click the tray icon to bring it back)" data-i18n-title="bar.hide"><svg viewBox="0 0 12 12"><path d="M2.5 6h7"/></svg></button>
@@ -232,6 +302,7 @@ select.inp{padding:4px 5px;cursor:pointer}
       <div class="fx" id="xpfx" hidden></div>
       <div class="fx evo" id="evofx" hidden></div>
     </div>
+    <div class="stats">
     <div class="idrow">
       <button class="petname" id="petname" type="button" title="Rename" data-i18n-title="pet.rename">dmn</button>
       <input class="petnameinput" id="petnameinput" maxlength="16" aria-label="Pet name" data-i18n-aria="pet.name" hidden>
@@ -241,6 +312,7 @@ select.inp{padding:4px 5px;cursor:pointer}
     <div class="xprow"><div class="xpbar"><i id="xpfill"></i></div><span class="xpcap" id="xpcap">0 / 60 XP</span></div>
     <div class="vitals" id="vitals"></div>
     <div class="foot"><span id="sync">connecting…</span><button class="ib" id="b-scan" type="button" title="Rescan GitHub / GitLab now" data-i18n-title="bar.scan"><svg viewBox="0 0 12 12"><path d="M9.6 6.4A3.6 3.6 0 1 1 8.5 3.3M9.4 1.6v2.2H7.2"/></svg></button></div>
+    </div>
   </main>
 
   <section class="panel" id="panel" hidden>
@@ -297,6 +369,7 @@ select.inp{padding:4px 5px;cursor:pointer}
         <p class="hint" data-i18n="setup.ciHint">CI column: latest run on the branch you pushed last. A red build in a repo you touched this fortnight makes the pet sick; turning the same branch green earns +15 XP, once a day per repo.</p>
         <ul class="repos" id="repos"></ul>
         <p class="hint" data-i18n-html="setup.kindHint">Unity and Unreal repos are detected from <code>ProjectSettings/</code> + <code>Assets/</code> and <code>*.uproject</code>. Pick a source to override.</p>
+        <h3 class="sub"><span data-i18n="setup.window">Window</span></h3>
         <label class="tog"><input type="checkbox" id="t-top"> <span data-i18n="setup.top">Always on top</span></label>
         <label class="tog"><input type="checkbox" id="t-auto"> <span data-i18n="setup.auto">Start with Windows</span></label>
         <div class="arow"><button class="sbtn" id="b-data" type="button" data-i18n="setup.data">Open save folder</button><button class="sbtn danger" id="b-quit" type="button" data-i18n="setup.quit">Quit</button></div>

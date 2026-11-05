@@ -50,10 +50,10 @@ function sick(ctx) {
 
 // Z's rising off the head.
 function sleep(ctx) {
-  const {A, sprite, sleeping, motion, f, body, screen} = ctx;
+  const {A, sprite, top, sleeping, motion, f, body, screen} = ctx;
   if (!sleeping) return;
   const [hx, hy] = A.head, k = motion ? ((f >> 3) % 3) : 1;
-  sprite(['####', '..#.', '.#..', '####'], hx + 6 + k * 2, hy - 4 - k * 3, {'#': k === 2 ? mix(body, screen, 0.4) : mix(body, '#ffffff', 0.6)});
+  sprite(['####', '..#.', '.#..', '####'], hx + 6 + k * 2, top(hy - 4 - k * 3), {'#': k === 2 ? mix(body, screen, 0.4) : mix(body, '#ffffff', 0.6)});
 }
 
 module.exports = {shadow, orbit, shiny, sick, sleep};

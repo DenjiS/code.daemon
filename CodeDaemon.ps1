@@ -63,6 +63,8 @@ public static class CdNative {
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
   [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
   public static void Drag(IntPtr h) { ReleaseCapture(); SendMessage(h, 0xA1, (IntPtr)2, IntPtr.Zero); }
+  // Resize from an edge of the borderless window: ht is a WM_NCHITTEST code (HTLEFT=10 ... HTBOTTOMRIGHT=17).
+  public static void Resize(IntPtr h, int ht) { ReleaseCapture(); SendMessage(h, 0xA1, (IntPtr)ht, IntPtr.Zero); }
   public static void RoundCorners(IntPtr h) { int pref = 2; try { DwmSetWindowAttribute(h, 33, ref pref, 4); } catch { } }
   public static void EnableDpi() {
     try { if (SetProcessDpiAwarenessContext((IntPtr)(-4))) return; } catch { }
@@ -125,11 +127,11 @@ Restore-FromTmp $SetPath
 Restore-FromTmp $SavePath
 
 function Read-Settings {
-  $s = @{ ghToken = $null; glToken = $null; glUrl = 'https://gitlab.com'; topmost = $true; expanded = $false; x = $null; y = $null }
+  $s = @{ ghToken = $null; glToken = $null; glUrl = 'https://gitlab.com'; topmost = $true; expanded = $false; large = $false; largeW = $null; largeH = $null; x = $null; y = $null }
   if (Test-Path -LiteralPath $SetPath) {
     try {
       $o = [IO.File]::ReadAllText($SetPath) | ConvertFrom-Json
-      foreach ($k in @('ghToken', 'glToken', 'glUrl', 'topmost', 'expanded', 'x', 'y')) { if ($null -ne $o.$k) { $s[$k] = $o.$k } }
+      foreach ($k in @('ghToken', 'glToken', 'glUrl', 'topmost', 'expanded', 'large', 'largeW', 'largeH', 'x', 'y')) { if ($null -ne $o.$k) { $s[$k] = $o.$k } }
     } catch {
       # Keep the broken file instead of overwriting it with empty tokens on the next save.
       Write-Log "settings unreadable: $($_.Exception.Message)"
@@ -157,6 +159,7 @@ function Get-PublicSettings {
     gl = @{ connected = [bool]$Settings.glToken; url = [string]$Settings.glUrl }
     topmost = [bool]$Settings.topmost
     expanded = [bool]$Settings.expanded
+    large = [bool]$Settings.large
     autostart = (Test-Path -LiteralPath $StartupLnk)
     dataDir = $DataDir
   }
@@ -287,7 +290,16 @@ $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 $form.ShowInTaskbar = $false
 $form.TopMost = [bool]$Settings.topmost
 $form.BackColor = [System.Drawing.Color]::FromArgb(21, 25, 32)
-$form.ClientSize = New-Object System.Drawing.Size([int][Math]::Round(300 * $Scale), [int][Math]::Round(392 * $Scale))
+# Width in CSS px: 300 compact, 720 large (the page asks for it with each resize).
+# The large window is resizable; its last size (CSS px) is kept in largeW/largeH.
+$LargeMin = @{ w = 560; h = 380 }
+$script:CssWidth = 300
+$script:CssHeight = 392
+if ($Settings.large) {
+  $script:CssWidth = if ($Settings.largeW) { [int]$Settings.largeW } else { 720 }
+  $script:CssHeight = if ($Settings.largeH) { [int]$Settings.largeH } elseif ($Settings.expanded) { 780 } else { 400 }
+}
+$form.ClientSize = New-Object System.Drawing.Size([int][Math]::Round($script:CssWidth * $Scale), [int][Math]::Round($script:CssHeight * $Scale))
 
 function Set-StartPosition {
   $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
@@ -302,23 +314,41 @@ function Set-StartPosition {
   $form.Location = New-Object System.Drawing.Point($x, $y)
 }
 function Save-Position { $Settings.x = $form.Left; $Settings.y = $form.Top; Write-Settings }
-$script:CssHeight = 392
-function Set-WidgetHeight([int]$cssHeight) {
+function Set-MinSize {
+  $form.MinimumSize = if ($Settings.large) { New-Object System.Drawing.Size([int]($LargeMin.w * $script:Scale), [int]($LargeMin.h * $script:Scale)) } else { [System.Drawing.Size]::Empty }
+}
+function Save-LargeSize {
+  if (-not $Settings.large) { return }
+  $Settings.largeW = $script:CssWidth; $Settings.largeH = $script:CssHeight; Write-Settings
+}
+# A wider window grows to the left (the right edge stays put) and is kept on its screen.
+function Set-WidgetSize([int]$cssWidth, [int]$cssHeight) {
+  $moved = $false
+  if ($cssWidth -ge 240 -and $cssWidth -le 4000) { $script:CssWidth = $cssWidth }
   $script:CssHeight = $cssHeight
-  $h = [int][Math]::Round($cssHeight * $script:Scale)
   $wa = [System.Windows.Forms.Screen]::FromControl($form).WorkingArea
+  $w = [int][Math]::Round($script:CssWidth * $script:Scale)
+  $w = [Math]::Min($w, $wa.Width)
+  $h = [int][Math]::Round($cssHeight * $script:Scale)
   $h = [Math]::Max(120, [Math]::Min($h, $wa.Height - 8))
+  $x = $form.Left
+  if ($w -ne $form.Width) { $x = $form.Right - $w; $moved = $true }
+  if ($x + $w -gt $wa.Right) { $x = $wa.Right - $w; $moved = $true }
+  if ($x -lt $wa.Left) { $x = $wa.Left; $moved = $true }
   $y = $form.Top
   if ($y + $h -gt $wa.Bottom) { $y = [Math]::Max($wa.Top, $wa.Bottom - $h) }
-  $form.SetBounds($form.Left, $y, $form.Width, $h)
+  $form.SetBounds($x, $y, $w, $h)
+  if ($moved -and $form.Visible) { Save-Position }
 }
+function Set-WidgetHeight([int]$cssHeight) { Set-WidgetSize $script:CssWidth $cssHeight }
 # Follows the DPI of the monitor the widget is on, so it keeps its size when dragged to another screen.
 function Update-Scale {
   if (-not $form.IsHandleCreated) { return }
   $s = [CdNative]::ScaleFor($form.Handle)
   if ([Math]::Abs($s - $script:Scale) -lt 0.01) { return }
   $script:Scale = $s
-  $form.Width = [int][Math]::Round(300 * $s)
+  Set-MinSize
+  $form.Width = [int][Math]::Round($script:CssWidth * $s)
   Set-WidgetHeight $script:CssHeight
 }
 function Show-Widget { $form.Show(); $form.Activate() }
@@ -355,7 +385,19 @@ function Receive-PageMessage([string]$json) {
       Send-Raw ('{"type":"init","save":' + (ConvertTo-JsString $saveText) + ',"settings":' + ((Get-PublicSettings) | ConvertTo-Json -Compress -Depth 4) + '}')
     }
     'drag' { [CdNative]::Drag($form.Handle); Save-Position }
-    'resize' { Set-WidgetHeight ([int]$m.h) }
+    'resize' {
+      if ($m.w) { Set-WidgetSize ([int]$m.w) ([int]$m.h) } else { Set-WidgetHeight ([int]$m.h) }
+      Save-LargeSize
+    }
+    'sizeDrag' {
+      $ht = @{ l = 10; r = 11; t = 12; tl = 13; tr = 14; b = 15; bl = 16; br = 17 }[[string]$m.edge]
+      if ($Settings.large -and $ht) {
+        [CdNative]::Resize($form.Handle, $ht)
+        $script:CssWidth = [int][Math]::Round($form.ClientSize.Width / $script:Scale)
+        $script:CssHeight = [int][Math]::Round($form.ClientSize.Height / $script:Scale)
+        Save-LargeSize; Save-Position
+      }
+    }
     'api' { Start-Api $m }
     'setToken' {
       $tok = ([string]$m.token).Trim()
@@ -386,6 +428,14 @@ function Receive-PageMessage([string]$json) {
       Send-ToPage @{ type = 'settings'; settings = (Get-PublicSettings) }
     }
     'expanded' { $Settings.expanded = [bool]$m.on; Write-Settings }
+    'large' {
+      $Settings.large = [bool]$m.on; Write-Settings; Set-MinSize
+      if ($Settings.large) {
+        $w = if ($Settings.largeW) { [int]$Settings.largeW } else { 720 }
+        $h = if ($Settings.largeH) { [int]$Settings.largeH } elseif ($Settings.expanded) { 780 } else { 400 }
+        Set-WidgetSize $w $h
+      }
+    }
     'autostart' { Set-Autostart ([bool]$m.on); Send-ToPage @{ type = 'settings'; settings = (Get-PublicSettings) } }
     'openData' { Start-Process explorer.exe $DataDir }
     'menu' {
@@ -548,6 +598,7 @@ $form.add_FormClosing({
 })
 [System.Windows.Forms.Application]::add_ThreadException({ param($s, $e) Write-Log "unhandled: $($e.Exception.Message)" })
 
+Set-MinSize
 Set-StartPosition
 $Tray.Visible = $true
 $Timer.Start()

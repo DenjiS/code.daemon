@@ -56,9 +56,9 @@ function loadState(text) {
   return s;
 }
 let state = freshState();
-let settings = {gh:{connected:false}, gl:{connected:false, url:'https://gitlab.com'}, topmost:true, expanded:false, autostart:false};
+let settings = {gh:{connected:false}, gl:{connected:false, url:'https://gitlab.com'}, topmost:true, expanded:false, large:false, autostart:false};
 let errors = {gh:null, gl:null}, rate = {gh:null, gl:null};
-let scanning = false, ready = false, expanded = false, tab = 'feed';
+let scanning = false, ready = false, expanded = false, large = false, tab = 'feed';
 let shownStage = null;  // the stage on screen, to notice hunger taking one away
 const allSessions = () => state.manual.concat(state.auto);
 const deriveNow = () => P.derive(allSessions(), Date.now(), {ci: state.ci, events: state.events});
@@ -313,7 +313,7 @@ async function scan(opts = {}) {
   const provs = ['gh', 'gl'].filter(p => settings[p].connected && (!opts.only || opts.only === p));
   if (!provs.length) { render(); return; }
   scanning = true; render();
-  const beforeXP = D.xp, beforeStage = D.stage, now = Date.now();
+  const beforeXP = D.xp, beforeStage = D.stage, beforeSick = D.sick, now = Date.now();
   let fixed = 0;
   for (const p of provs) {
     const full = opts.full || !state.lastScan[p];
@@ -341,6 +341,9 @@ async function scan(opts = {}) {
   if (D.xp > beforeXP) fx($('#xpfx'), `+${D.xp - beforeXP} XP`);
   if (D.stage > beforeStage) evolve(D.stage);
   else if (fixed) setTimeout(() => fx($('#evofx'), fixed > 1 ? t('fx.fixedN', {n: fixed}) : t('fx.fixed')), 600);
+  // Keep evolution visible when a scan also changes CI; play its reaction next.
+  if (!beforeSick && D.sick) play('ciFail', {queue: true});
+  else if (fixed) play('ciFixed', {queue: true});
 }
 
 /* ---------- render ---------- */
@@ -393,7 +396,7 @@ function render() {
   }).join('');
   $('#hudstage').textContent = `${n.stage(st)} · ${st}/${MAX_STAGE}`;
   $('#hudup').textContent = has ? t('hud.streak', {n: D.streak}) : t('hud.nosignal');
-  $('#hudstatus').textContent = !ready ? t('hud.boot') : statusText();
+  const hs = $('#hudstatus'); hs.textContent = !ready ? t('hud.boot') : statusText(); hs.title = hs.textContent;
   canvas.setAttribute('aria-label', has
     ? t(D.ciTracked ? 'aria.petBuild' : 'aria.pet', {name: state.name, what: n.stage(st) + (st >= FORM_STAGE ? ' ' + n.form(form) : ''), e: D.energy, m: D.mood, r: D.rest, h: D.health})
     : t('aria.egg', {name: state.name}));
@@ -478,13 +481,43 @@ function renderSetup() {
 }
 
 /* ---------- panel + window ---------- */
-let lastH = 0;
+let lastH = 0, lastW = 0;
+const WIDTH = {compact: 300, large: 720};  // window width in CSS px; the host sizes the window to it
 function fit() {
-  const h = Math.ceil($('#app').getBoundingClientRect().height);
-  if (h && h !== lastH) { lastH = h; post({type:'resize', h}); }
+  if (large) return;  // the large window is sized by the user (and the host remembers it)
+  const h = Math.ceil($('#app').getBoundingClientRect().height), w = large ? WIDTH.large : WIDTH.compact;
+  if (h && (h !== lastH || w !== lastW)) { lastH = h; lastW = w; post({type:'resize', h, w}); }
 }
-function setExpanded(on, which) {
+// Large view: stats move left of the screen, the type grows. Remembered by the host.
+function setLarge(on, quiet) {
+  large = !!on;
+  document.documentElement.classList.toggle('large', large);
+  $('#b-size').setAttribute('aria-pressed', String(large));
+  if (!quiet) post({type:'large', on: large});
+  if (!large) { lastH = lastW = 0; edge(''); requestAnimationFrame(fit); }
+}
+// Resizing the large window: a press within a few px of its edge hands the drag to Windows.
+const EDGE_PX = 6, EDGE_CUR = {l:'ew-resize', r:'ew-resize', t:'ns-resize', b:'ns-resize', tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize'};
+function edgeAt(e) {
+  if (!large || !wv) return '';
+  const x = e.clientX, y = e.clientY, w = innerWidth, h = innerHeight;
+  return (y < EDGE_PX ? 't' : y >= h - EDGE_PX ? 'b' : '') + (x < EDGE_PX ? 'l' : x >= w - EDGE_PX ? 'r' : '');
+}
+function edge(k) { const c = EDGE_CUR[k] || ''; if (document.documentElement.dataset.edge !== c) document.documentElement.dataset.edge = c; }
+window.addEventListener('mousemove', e => { if (!e.buttons) edge(edgeAt(e)); }, true);
+document.addEventListener('mouseleave', () => edge(''));
+window.addEventListener('mousedown', e => {
+  const k = e.button === 0 && edgeAt(e);
+  if (!k) return;
+  e.preventDefault(); e.stopPropagation();
+  post({type:'sizeDrag', edge: k});
+}, true);
+$('#b-size').addEventListener('click', () => setLarge(!large));
+const PANEL_H = 380;  // in the large view opening the panel makes the window this much taller
+function setExpanded(on, which, keepSize) {
+  if (large && !keepSize && on !== expanded) post({type:'resize', w: innerWidth, h: Math.max(380, innerHeight + (on ? PANEL_H : -PANEL_H))});
   expanded = on;
+  document.documentElement.classList.toggle('open', on);
   if (which) tab = which;
   $('#panel').hidden = !on;
   $('#b-more').setAttribute('aria-expanded', String(on));
@@ -505,21 +538,27 @@ function startDrag(e) {
 $('#bar').addEventListener('mousedown', startDrag);
 
 /* ---------- clips and poking the pet ----------
-   An event clip (pet-core's clips: a reaction to a click, or 'evolve') plays over the pet for its length.
+   An event clip (pet-core's clips: a reaction to a click, CI, or evolution) plays over the pet for its length.
    On the screen a press that stays put is a click on the pet; one that moves a few pixels drags the window,
    as before. Themes without reactions (P.canReact) drag straight away. Reactions are cosmetic only. */
 const DRAG_PX = 4, COMBO_MS = 2500, TICK_MS = 125;  // TICK_MS: one animation frame at 8 fps
 let press = null, playing = null, lastPoke = null, pokes = [], hoverCell = '';
+const clipQueue = [];
 function play(name, extra) {
+  if (extra && extra.queue && clipNow()) { clipQueue.push({name, ...extra}); return; }
+  clipQueue.length = 0;
   playing = Object.assign({name, start: performance.now()}, extra);
   paint();
 }
 // The clip playing now, as build() takes it, or null once it is over.
 function clipNow() {
-  if (!playing) return null;
-  const t = Math.floor((performance.now() - playing.start) / TICK_MS), clip = P.clipFor(state.theme, playing.name);
-  if (!clip || t >= clip.len) { playing = null; return null; }
-  return {name: playing.name, t, n: playing.n, gx: playing.gx, gy: playing.gy};
+  while (playing) {
+    const t = Math.floor((performance.now() - playing.start) / TICK_MS), clip = P.clipFor(state.theme, playing.name);
+    if (clip && t < clip.len) return {name: playing.name, t, n: playing.n, gx: playing.gx, gy: playing.gy};
+    const next = clipQueue.shift();
+    playing = next ? Object.assign({start: performance.now()}, next) : null;
+  }
+  return null;
 }
 function cellAt(e) {
   const r = canvas.getBoundingClientRect();
@@ -667,7 +706,7 @@ nameIn.addEventListener('blur', () => commitName(true));
 function normSettings(s) {
   s = s || {};
   return {gh: {connected: !!(s.gh && s.gh.connected)}, gl: {connected: !!(s.gl && s.gl.connected), url: (s.gl && s.gl.url) || 'https://gitlab.com'},
-    topmost: s.topmost !== false, expanded: !!s.expanded, autostart: !!s.autostart};
+    topmost: s.topmost !== false, expanded: !!s.expanded, large: !!s.large, autostart: !!s.autostart};
 }
 function onHost(m) {
   if (!m || typeof m !== 'object') return;
@@ -676,10 +715,11 @@ function onHost(m) {
       state = loadState(m.save);
       settings = normSettings(m.settings);
       ready = true;
+      setLarge(settings.large, true);
       applyLang();
       render();
-      if (!settings.gh.connected && !settings.gl.connected) setExpanded(true, 'setup');
-      else { if (settings.expanded) setExpanded(true); scan(); }
+      if (!settings.gh.connected && !settings.gl.connected) setExpanded(true, 'setup', true);
+      else { if (settings.expanded) setExpanded(true, null, true); scan(); }
       break;
     case 'settings':
       settings = normSettings(m.settings);

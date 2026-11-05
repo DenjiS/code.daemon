@@ -37,7 +37,7 @@ const BASE = {
   sleep: Object.assign({}, IDLE, {bob: 0, walk: 0, flap: 0, sway: 0}),
 };
 
-/* event clips: reactions to clicks (see reactionFor in reactions.js), the evolution and the devolution */
+/* event clips: reactions to clicks (see reactionFor in reactions.js), CI, the evolution and the devolution */
 const CLIPS = {
   pat: {len: 16, face: 'joy', mouth: 'smile', sq: [0.92, 0.88, 0.92, 0.96], fx: 'hearts'},
   tickle: {len: 14, face: 'giggle', mouth: 'open', ox: shake(12), fx: 'sparks'},
@@ -52,6 +52,12 @@ const CLIPS = {
   stir: {len: 12, face: t => (t >= 2 && t < 10 ? 'peek' : null), ox: shake(2), fx: 'drowsy'},
   wobble: {len: 8, ox: [1, -1, 1, -1, 1, 0, 0, 0], fx: 'poke'},
   flinch: {len: 8, face: 'wow', mouth: 'o', ox: shake(4), fx: 'exclaim'},
+  // a red build: startled eyes, a shiver, and a red alarm beside the head
+  ciFail: {len: 18, face: t => (t < 12 ? 'wow' : null), mouth: t => (t < 12 ? 'o' : null), ox: shake(12),
+    sq: [1, 0.96, 1, 0.96, 1, 0.98], fx: 'alarm'},
+  // a fixed build: breathe out, then a small happy hop with bright stars
+  ciFixed: {len: 20, face: t => (t < 16 ? 'joy' : null), mouth: t => (t < 5 ? 'smile' : t < 16 ? 'open' : null),
+    oy: [0, 0, 0, 0, 0, -1, -2, -2, -1, 0], sq: [0.96, 0.94, 0.96, 0.98, 1], fx: 'relief'},
   // two happy jumps and a burst of stars: the widget plays it when the pet evolves
   evolve: {len: 18, face: t => (t < 14 ? 'joy' : null), mouth: t => (t < 14 ? 'open' : null), flap: t => t & 1,
     oy: [0, -2, -4, -4, -2, 0, 0, -2, -4, -4, -2, 0], sq: [1, 1, 1, 1, 1, 1, 0.88, 1, 1, 1, 1, 1, 0.88, 0.95], fx: 'burst'},

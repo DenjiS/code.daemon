@@ -681,7 +681,7 @@ const BASE = {
   sleep: Object.assign({}, IDLE, {bob: 0, walk: 0, flap: 0, sway: 0}),
 };
 
-/* event clips: reactions to clicks (see reactionFor in reactions.js), the evolution and the devolution */
+/* event clips: reactions to clicks (see reactionFor in reactions.js), CI, the evolution and the devolution */
 const CLIPS = {
   pat: {len: 16, face: 'joy', mouth: 'smile', sq: [0.92, 0.88, 0.92, 0.96], fx: 'hearts'},
   tickle: {len: 14, face: 'giggle', mouth: 'open', ox: shake(12), fx: 'sparks'},
@@ -696,6 +696,12 @@ const CLIPS = {
   stir: {len: 12, face: t => (t >= 2 && t < 10 ? 'peek' : null), ox: shake(2), fx: 'drowsy'},
   wobble: {len: 8, ox: [1, -1, 1, -1, 1, 0, 0, 0], fx: 'poke'},
   flinch: {len: 8, face: 'wow', mouth: 'o', ox: shake(4), fx: 'exclaim'},
+  // a red build: startled eyes, a shiver, and a red alarm beside the head
+  ciFail: {len: 18, face: t => (t < 12 ? 'wow' : null), mouth: t => (t < 12 ? 'o' : null), ox: shake(12),
+    sq: [1, 0.96, 1, 0.96, 1, 0.98], fx: 'alarm'},
+  // a fixed build: breathe out, then a small happy hop with bright stars
+  ciFixed: {len: 20, face: t => (t < 16 ? 'joy' : null), mouth: t => (t < 5 ? 'smile' : t < 16 ? 'open' : null),
+    oy: [0, 0, 0, 0, 0, -1, -2, -2, -1, 0], sq: [0.96, 0.94, 0.96, 0.98, 1], fx: 'relief'},
   // two happy jumps and a burst of stars: the widget plays it when the pet evolves
   evolve: {len: 18, face: t => (t < 14 ? 'joy' : null), mouth: t => (t < 14 ? 'open' : null), flap: t => t & 1,
     oy: [0, -2, -4, -4, -2, 0, 0, -2, -4, -4, -2, 0], sq: [1, 1, 1, 1, 1, 1, 0.88, 1, 1, 1, 1, 1, 0.88, 0.95], fx: 'burst'},
@@ -771,11 +777,19 @@ const {GW, GH, G, K} = require('render/raster');
 function surface() {
   const buf = new Map(), t = {ox: 0, oy: 0, sq: 1};
   const put0 = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x >= 0 && y >= 0 && x < GW && y < GH) buf.set(K(x, y), c); };
-  const put = (x, y, c) => put0(x + t.ox, (t.sq === 1 ? y : G - (G - y) * t.sq) + t.oy, c);
+  const row = y => (t.sq === 1 ? y : G - (G - y) * t.sq) + t.oy;
+  const cell = (x, y) => {
+    x = Math.round(x + t.ox); y = Math.round(row(y));
+    return x >= 0 && y >= 0 && x < GW && y < GH ? K(x, y) : -1;
+  };
+  const put = (x, y, c) => { const k = cell(x, y); if (k >= 0) buf.set(k, c); };
+  const get = (x, y) => buf.get(cell(x, y));
+  // Keep an ornament's top row visible in this pose; whole-cell shifts preserve its pixel pattern.
+  const top = y => Math.round(row(y)) < 0 ? y + Math.ceil(-row(y) / t.sq) : y;
   // rows of characters, each looked up in colors; characters without a color are transparent
   const sprite = (rows, x0, y0, colors) => rows.forEach((row, j) => { for (let i = 0; i < row.length; i++) { const c = colors[row[i]]; if (c) put(x0 + i, y0 + j, c); } });
   const move = (ox, oy, sq) => { t.ox = ox; t.oy = oy; t.sq = sq; };
-  return {buf, put, put0, sprite, move, transform: t};
+  return {buf, put, put0, get, top, sprite, move, transform: t};
 }
 
 module.exports = {surface};
@@ -863,6 +877,25 @@ const FX = {
       if (y < 0 || y > G + 2 || x < 0 || x >= GW) continue;
       const c = t < 8 ? C.gold : t < 12 ? C.spark : mix(C.spark, ctx.screen, 0.5);
       if (k % 2) ctx.put(x, y, c); else star(ctx, x, y, c);
+    }
+  },
+  alarm(ctx, t) {  // the first red build: an alarm and two little shiver marks
+    if (t >= 14) return;
+    const {hx, hy, sx, A} = spot(ctx), y = ctx.top(hy - 7);
+    ctx.sprite(['#', '#', '#', '.', '#'], sx, y, {'#': t < 10 ? C.alarm : mix(C.alarm, ctx.screen, 0.45)});
+    if (t < 10) for (const side of [-1, 1]) {
+      const x = Math.max(2, Math.min(GW - 3, hx + side * 10)), cy = Math.max(hy + 8, A.box[1] + 8);
+      ctx.put(x, cy, C.drop); ctx.put(x + side, cy + 1 + (t & 1), C.drop);
+    }
+  },
+  relief(ctx, t) {  // a soft breath, then a pair of stars: the face works with googly eyes too
+    const {hx, hy} = spot(ctx);
+    if (t < 5) {
+      const x = Math.min(GW - 3, hx + 8 + (t >> 1)), y = ctx.top(hy + 6 - (t >> 1));
+      ctx.put(x, y, mix(C.drop, ctx.screen, 0.35)); ctx.put(x + 1, y, mix(C.drop, ctx.screen, 0.55));
+    } else if (t < 16) for (const side of [-1, 1]) {
+      const x = Math.max(2, Math.min(GW - 3, hx + side * (9 + ((t - 5) >> 2)))), y = ctx.top(hy - 2 - ((t - 5) >> 1)) + 1;
+      star(ctx, x, y, t < 12 ? C.spark : mix(C.spark, ctx.screen, 0.45));
     }
   },
   crumble(ctx, t) {  // bits of the creature come loose and fall to the ground, greying as they go
@@ -1058,7 +1091,7 @@ module.exports = {drawFace, drawEye, drawMouth, eyeColor};
 const {clamp} = require('core/util');
 const {CREST_STAGE} = require('core/rules');
 const {C, mix} = require('render/colors');
-const {G} = require('render/raster');
+const {GW, G} = require('render/raster');
 
 // Behind the creature, on the fixed screen: the Night Owl's moon and the Shipper's crate.
 function backdrop(ctx) {
@@ -1105,13 +1138,20 @@ function worn(ctx) {
 
 // Over the head: the crown of a Crowned pet, then the crest of the dominant source, in the affinity color.
 function crest(ctx) {
-  const {A, sprite, put, st, f, D, aff, mut, mo, motion, body, screen} = ctx;
+  const {A, sprite, put, top, st, f, D, aff, mut, mo, motion, body, screen} = ctx;
   let [tx, ty] = A.head;
-  if (mut.crowned && st >= CREST_STAGE) { sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], tx - 3, ty - 2, {y: C.gold, g: C.gem}); ty -= 3; }
+  const crowned = mut.crowned && st >= CREST_STAGE, gap = crowned ? 3 : 0;
+  const L = clamp(ty - gap - 4, 3, 6), spark = motion ? ((f >> 2) % 5) : 0;
+  const rise = Math.max(crowned ? 2 : 0, st < CREST_STAGE ? 0
+    : aff === 'github' ? gap + L + 2 : aff === 'gitlab' ? gap + 4.5
+    : aff === 'local' ? gap + 3 : aff === 'unreal' && spark === 2 ? gap + 4 : 0);
+  const dy = top(ty - rise) - (ty - rise);
+  // Tall pets keep their silhouette: only an overflowing crown/crest moves beside the head.
+  if (dy) { tx += tx < GW / 2 ? 14 : -14; ty += dy; }
+  if (crowned) { sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], tx - 3, ty - 2, {y: C.gold, g: C.gem}); ty -= 3; }
   if (st < CREST_STAGE) return;
   const hi = mix(body, '#ffffff', 0.6), sh = mix(body, screen, 0.42), deep = mix(body, screen, 0.75);
   if (aff === 'github') {  // a branching antenna
-    const L = clamp(ty - 4, 3, 6);  // shorter when the head is near the top edge
     for (let i = 1; i <= L; i++) put(tx, ty - i, sh);
     for (let i = 2; i < L; i++) put(tx + Math.min(3, i - 1), ty - i - 1, sh);
     const p = motion ? ((f >> 3) & 1) : 0;
@@ -1125,11 +1165,11 @@ function crest(ctx) {
     put(tx, ty - 1, sh); put(tx, ty - 2, sh); put(tx, ty - 3, (!motion || mo.alt) ? hi : sh);
   } else if (aff === 'unity') {  // a floating cube
     const [ux, uy] = A.cube, cb = motion ? ((f >> 2) & 1) : 0;
-    sprite(['...hhh...', '.hhhhhhh.', 'hhhhhhhhh', 'bbhhhhhss', 'bbbbhssss', 'bbbbbssss', 'bbbbbssss', '.bbbbsss.', '...bbs...'], ux - 4, uy + cb, {h: hi, b: body, s: sh});
+    sprite(['...hhh...', '.hhhhhhh.', 'hhhhhhhhh', 'bbhhhhhss', 'bbbbhssss', 'bbbbbssss', 'bbbbbssss', '.bbbbsss.', '...bbs...'], ux - 4, top(uy + cb), {h: hi, b: body, s: sh});
   } else if (aff === 'unreal') {  // a sparkle that hops around the creature
     const [x0, y0, x1, y1] = A.box;
     const sp = [[x0 - 1, y0 + 3], [x1 + 1, y0 + 8], [tx + 3, ty - 3], [x0 + 1, y1 - 6], [x1 - 2, y1 - 3]];
-    const [sx, sy] = sp[motion ? ((f >> 2) % sp.length) : 0];
+    const [sx, y] = sp[spark], sy = top(y - 1) + 1;
     put(sx, sy, hi); put(sx - 1, sy, sh); put(sx + 1, sy, sh); put(sx, sy - 1, sh); put(sx, sy + 1, sh);
   }
 }
@@ -1189,10 +1229,10 @@ function sick(ctx) {
 
 // Z's rising off the head.
 function sleep(ctx) {
-  const {A, sprite, sleeping, motion, f, body, screen} = ctx;
+  const {A, sprite, top, sleeping, motion, f, body, screen} = ctx;
   if (!sleeping) return;
   const [hx, hy] = A.head, k = motion ? ((f >> 3) % 3) : 1;
-  sprite(['####', '..#.', '.#..', '####'], hx + 6 + k * 2, hy - 4 - k * 3, {'#': k === 2 ? mix(body, screen, 0.4) : mix(body, '#ffffff', 0.6)});
+  sprite(['####', '..#.', '.#..', '####'], hx + 6 + k * 2, top(hy - 4 - k * 3), {'#': k === 2 ? mix(body, screen, 0.4) : mix(body, '#ffffff', 0.6)});
 }
 
 module.exports = {shadow, orbit, shiny, sick, sleep};
@@ -1660,12 +1700,12 @@ module.exports = {renderSVG};
 /* ---------- decor: small extras a stage can ask for in plan.decor(ctx), drawn over the face ---------- */
 'use strict';
 const {mix} = require('render/colors');
-const {G, K} = require('render/raster');
+const {G} = require('render/raster');
 
 // darker bands across a belly, every third row, under the head (dragons and the like)
 function bellyPlates(ctx) {
-  const {A, buf, put, pal, screen} = ctx, [hx] = A.head;
-  for (let y = G - 18; y <= G - 5; y += 3) for (let x = hx - 4; x <= hx + 4; x++) if (buf.get(K(x, y)) === pal.belly) put(x, y, mix(pal.belly, screen, 0.3));
+  const {A, get, put, pal, screen} = ctx, [hx] = A.head;
+  for (let y = G - 18; y <= G - 5; y += 3) for (let x = hx - 4; x <= hx + 4; x++) if (get(x, y) === pal.belly) put(x, y, mix(pal.belly, screen, 0.3));
 }
 
 module.exports = {bellyPlates};

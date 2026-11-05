@@ -1,7 +1,7 @@
 /* 한국어 */
 I18n.add('ko', {
   'bar.wiki': '위키: 펫이 작동하는 방식', 'tab.wiki': '위키', 'bar.more': '먹이, 기록, 설정, 위키',
-  'bar.hide': '트레이로 숨기기 (트레이 아이콘을 클릭하면 돌아옵니다)', 'bar.drag': '끌어서 이동',
+  'bar.size': '큰 화면 / 작은 화면', 'bar.hide': '트레이로 숨기기 (트레이 아이콘을 클릭하면 돌아옵니다)', 'bar.drag': '끌어서 이동',
   'pet.rename': '이름 바꾸기', 'pet.name': '펫 이름', 'bar.scan': '지금 GitHub / GitLab 다시 스캔',
   'tab.feed': '먹이', 'tab.log': '기록', 'tab.setup': '설정',
   'feed.hint': '커밋은 알아서 들어옵니다. 원격에 올라가지 않는 작업을 여기에 기록하세요: 로컬 스크립트, 블루프린트 수정, 리뷰.',
@@ -19,7 +19,7 @@ I18n.add('ko', {
   'setup.repos': '내 커밋이 있는 저장소',
   'setup.ciHint': 'CI 열: 마지막으로 푸시한 브랜치의 최신 실행. 최근 2주 안에 건드린 저장소의 빌드가 빨간색이면 펫이 아픕니다. 같은 브랜치가 다시 초록색이 되면 +15 XP, 저장소당 하루 한 번.',
   'setup.kindHint': 'Unity와 Unreal 저장소는 <code>ProjectSettings/</code> + <code>Assets/</code>와 <code>*.uproject</code>로 감지합니다. 다른 소스를 골라 바꿀 수 있습니다.',
-  'setup.top': '항상 위에', 'setup.auto': 'Windows 시작 시 실행', 'setup.data': '저장 폴더 열기', 'setup.quit': '종료',
+  'setup.window': '창', 'setup.top': '항상 위에', 'setup.auto': 'Windows 시작 시 실행', 'setup.data': '저장 폴더 열기', 'setup.quit': '종료',
 
   'time.now': '방금', 'time.m': '{n}분 전', 'time.h': '{n}시간 전', 'time.d': '{n}일 전',
   'sync.preview': '미리보기 · 예시 데이터', 'sync.connecting': '연결 중…', 'sync.syncing': 'GitHub / GitLab 동기화 중…',

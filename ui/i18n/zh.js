@@ -1,7 +1,7 @@
 /* 简体中文 */
 I18n.add('zh', {
   'bar.wiki': '百科：宠物如何运作', 'tab.wiki': '百科', 'bar.more': '喂食、日志、设置和百科',
-  'bar.hide': '隐藏到托盘（点击托盘图标即可恢复）', 'bar.drag': '拖动以移动',
+  'bar.size': '大 / 紧凑视图', 'bar.hide': '隐藏到托盘（点击托盘图标即可恢复）', 'bar.drag': '拖动以移动',
   'pet.rename': '重命名', 'pet.name': '宠物名字', 'bar.scan': '立即重新扫描 GitHub / GitLab',
   'tab.feed': '喂食', 'tab.log': '日志', 'tab.setup': '设置',
   'feed.hint': '提交会自动到来。这里记录那些不会推送到远程的工作：本地脚本、蓝图调整、代码审查。',
@@ -19,7 +19,7 @@ I18n.add('zh', {
   'setup.repos': '含有你提交的仓库',
   'setup.ciHint': 'CI 列：你最后推送的分支上的最新运行。两周内碰过的仓库构建变红，宠物就会生病；同一分支恢复绿色可得 +15 XP，每个仓库每天一次。',
   'setup.kindHint': 'Unity 和 Unreal 仓库通过 <code>ProjectSettings/</code> + <code>Assets/</code> 和 <code>*.uproject</code> 识别。可手动选择来源覆盖。',
-  'setup.top': '总在最前', 'setup.auto': '随 Windows 启动', 'setup.data': '打开存档文件夹', 'setup.quit': '退出',
+  'setup.window': '窗口', 'setup.top': '总在最前', 'setup.auto': '随 Windows 启动', 'setup.data': '打开存档文件夹', 'setup.quit': '退出',
 
   'time.now': '刚刚', 'time.m': '{n} 分钟前', 'time.h': '{n} 小时前', 'time.d': '{n} 天前',
   'sync.preview': '预览 · 示例数据', 'sync.connecting': '连接中…', 'sync.syncing': '正在同步 GitHub / GitLab…',

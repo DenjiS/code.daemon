@@ -1,7 +1,7 @@
 /* Português (Brasil) */
 I18n.add('pt', {
   'bar.wiki': 'Wiki: como o bichinho funciona', 'tab.wiki': 'Wiki', 'bar.more': 'Alimentar, registro, ajustes e wiki',
-  'bar.hide': 'Esconder na bandeja (clique no ícone da bandeja para trazer de volta)', 'bar.drag': 'Arraste para mover',
+  'bar.size': 'Visualização grande / compacta', 'bar.hide': 'Esconder na bandeja (clique no ícone da bandeja para trazer de volta)', 'bar.drag': 'Arraste para mover',
   'pet.rename': 'Renomear', 'pet.name': 'Nome do bichinho', 'bar.scan': 'Escanear GitHub / GitLab agora',
   'tab.feed': 'Alimentar', 'tab.log': 'Registro', 'tab.setup': 'Ajustes',
   'feed.hint': 'Os commits chegam sozinhos. Registre aqui o trabalho que nunca chega a um remoto: scripts locais, ajustes de Blueprint, revisões.',
@@ -19,7 +19,7 @@ I18n.add('pt', {
   'setup.repos': 'Repositórios com seus commits',
   'setup.ciHint': 'Coluna CI: última execução no branch em que você fez push por último. Um build vermelho num repositório que você mexeu nas últimas duas semanas deixa o bichinho doente; se o mesmo branch voltar a ficar verde, +15 XP, uma vez por dia por repositório.',
   'setup.kindHint': 'Repositórios Unity e Unreal são detectados por <code>ProjectSettings/</code> + <code>Assets/</code> e <code>*.uproject</code>. Escolha outra fonte para mudar.',
-  'setup.top': 'Sempre visível', 'setup.auto': 'Iniciar com o Windows', 'setup.data': 'Abrir pasta de salvamento', 'setup.quit': 'Sair',
+  'setup.window': 'Janela', 'setup.top': 'Sempre visível', 'setup.auto': 'Iniciar com o Windows', 'setup.data': 'Abrir pasta de salvamento', 'setup.quit': 'Sair',
 
   'time.now': 'agora mesmo', 'time.m': 'há {n} min', 'time.h': 'há {n} h', 'time.d': 'há {n} d',
   'sync.preview': 'prévia · dados de exemplo', 'sync.connecting': 'conectando…', 'sync.syncing': 'sincronizando GitHub / GitLab…',

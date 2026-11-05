@@ -51,6 +51,25 @@ const FX = {
       if (k % 2) ctx.put(x, y, c); else star(ctx, x, y, c);
     }
   },
+  alarm(ctx, t) {  // the first red build: an alarm and two little shiver marks
+    if (t >= 14) return;
+    const {hx, hy, sx, A} = spot(ctx), y = ctx.top(hy - 7);
+    ctx.sprite(['#', '#', '#', '.', '#'], sx, y, {'#': t < 10 ? C.alarm : mix(C.alarm, ctx.screen, 0.45)});
+    if (t < 10) for (const side of [-1, 1]) {
+      const x = Math.max(2, Math.min(GW - 3, hx + side * 10)), cy = Math.max(hy + 8, A.box[1] + 8);
+      ctx.put(x, cy, C.drop); ctx.put(x + side, cy + 1 + (t & 1), C.drop);
+    }
+  },
+  relief(ctx, t) {  // a soft breath, then a pair of stars: the face works with googly eyes too
+    const {hx, hy} = spot(ctx);
+    if (t < 5) {
+      const x = Math.min(GW - 3, hx + 8 + (t >> 1)), y = ctx.top(hy + 6 - (t >> 1));
+      ctx.put(x, y, mix(C.drop, ctx.screen, 0.35)); ctx.put(x + 1, y, mix(C.drop, ctx.screen, 0.55));
+    } else if (t < 16) for (const side of [-1, 1]) {
+      const x = Math.max(2, Math.min(GW - 3, hx + side * (9 + ((t - 5) >> 2)))), y = ctx.top(hy - 2 - ((t - 5) >> 1)) + 1;
+      star(ctx, x, y, t < 12 ? C.spark : mix(C.spark, ctx.screen, 0.45));
+    }
+  },
   crumble(ctx, t) {  // bits of the creature come loose and fall to the ground, greying as they go
     const {A} = spot(ctx), [x0, y0, x1] = A.box, c = ctx.skin || ctx.body;
     for (let k = 0; k < 8; k++) {

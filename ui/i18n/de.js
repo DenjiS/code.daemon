@@ -1,7 +1,7 @@
 /* Deutsch */
 I18n.add('de', {
   'bar.wiki': 'Wiki: wie das Haustier funktioniert', 'tab.wiki': 'Wiki', 'bar.more': 'Füttern, Verlauf, Optionen und Wiki',
-  'bar.hide': 'In den Infobereich (Klick aufs Tray-Symbol holt es zurück)', 'bar.drag': 'Ziehen zum Verschieben',
+  'bar.size': 'Große / kompakte Ansicht', 'bar.hide': 'In den Infobereich (Klick aufs Tray-Symbol holt es zurück)', 'bar.drag': 'Ziehen zum Verschieben',
   'pet.rename': 'Umbenennen', 'pet.name': 'Name des Haustiers', 'bar.scan': 'GitHub / GitLab jetzt neu scannen',
   'tab.feed': 'Füttern', 'tab.log': 'Verlauf', 'tab.setup': 'Optionen',
   'feed.hint': 'Commits kommen von allein. Hier trägst du Arbeit ein, die nie ein Remote erreicht: lokale Skripte, Blueprint-Anpassungen, Reviews.',
@@ -19,7 +19,7 @@ I18n.add('de', {
   'setup.repos': 'Repos mit deinen Commits',
   'setup.ciHint': 'CI-Spalte: letzter Lauf auf dem Branch, auf den du zuletzt gepusht hast. Ein roter Build in einem Repo, das du in den letzten zwei Wochen angefasst hast, macht das Haustier krank; wird derselbe Branch wieder grün, gibt es +15 XP, einmal pro Tag und Repo.',
   'setup.kindHint': 'Unity- und Unreal-Repos werden an <code>ProjectSettings/</code> + <code>Assets/</code> und <code>*.uproject</code> erkannt. Wähle eine Quelle, um das zu ändern.',
-  'setup.top': 'Immer im Vordergrund', 'setup.auto': 'Mit Windows starten', 'setup.data': 'Speicherordner öffnen', 'setup.quit': 'Beenden',
+  'setup.window': 'Fenster', 'setup.top': 'Immer im Vordergrund', 'setup.auto': 'Mit Windows starten', 'setup.data': 'Speicherordner öffnen', 'setup.quit': 'Beenden',
 
   'time.now': 'gerade eben', 'time.m': 'vor {n} Min.', 'time.h': 'vor {n} Std.', 'time.d': 'vor {n} T.',
   'sync.preview': 'Vorschau · Beispieldaten', 'sync.connecting': 'verbinde…', 'sync.syncing': 'synchronisiere GitHub / GitLab…',

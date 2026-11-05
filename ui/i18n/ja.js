@@ -1,7 +1,7 @@
 /* 日本語 */
 I18n.add('ja', {
   'bar.wiki': 'Wiki：ペットのしくみ', 'tab.wiki': 'Wiki', 'bar.more': 'エサ・ログ・設定・Wiki',
-  'bar.hide': 'トレイに隠す（トレイのアイコンをクリックで戻ります）', 'bar.drag': 'ドラッグで移動',
+  'bar.size': '大きい表示 / コンパクト表示', 'bar.hide': 'トレイに隠す（トレイのアイコンをクリックで戻ります）', 'bar.drag': 'ドラッグで移動',
   'pet.rename': '名前を変更', 'pet.name': 'ペットの名前', 'bar.scan': 'GitHub / GitLab を今すぐ再スキャン',
   'tab.feed': 'エサ', 'tab.log': 'ログ', 'tab.setup': '設定',
   'feed.hint': 'コミットは自動で届きます。リモートに上がらない作業はここに記録しましょう：ローカルのスクリプト、Blueprint の調整、レビューなど。',
@@ -19,7 +19,7 @@ I18n.add('ja', {
   'setup.repos': 'あなたのコミットがあるリポジトリ',
   'setup.ciHint': 'CI 列：最後に push したブランチの最新の実行。ここ2週間に触ったリポジトリのビルドが赤だとペットは病気になります。同じブランチが緑に戻れば +15 XP（リポジトリごとに1日1回）。',
   'setup.kindHint': 'Unity と Unreal のリポジトリは <code>ProjectSettings/</code> + <code>Assets/</code> と <code>*.uproject</code> で判別します。ソースを選んで上書きできます。',
-  'setup.top': '常に手前に表示', 'setup.auto': 'Windows と一緒に起動', 'setup.data': 'セーブフォルダーを開く', 'setup.quit': '終了',
+  'setup.window': 'ウィンドウ', 'setup.top': '常に手前に表示', 'setup.auto': 'Windows と一緒に起動', 'setup.data': 'セーブフォルダーを開く', 'setup.quit': '終了',
 
   'time.now': 'たった今', 'time.m': '{n}分前', 'time.h': '{n}時間前', 'time.d': '{n}日前',
   'sync.preview': 'プレビュー · サンプルデータ', 'sync.connecting': '接続中…', 'sync.syncing': 'GitHub / GitLab を同期中…',

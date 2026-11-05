@@ -41,6 +41,10 @@ function boot(save, repos, now, extra) {
   return {w, host, tell: m => host.listener({data: m})};
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
+async function until(check) {
+  for (let i = 0; i < 200; i++) { if (check()) return; await wait(10); }
+  assert.ok(check(), 'widget finished the requested scan');
+}
 const toS = (name, cs) => P.toSessions({key: 'gh:' + name, name, prov: 'gh', kind: 'github'}, cs.map(c => ({...c, msg: 'w'})), [], {});
 
 test('a rescan keeps a session that straddles the window, keeps repos that failed, and a branch switch is not a fix', {skip: !JSDOM && 'jsdom not installed'}, async () => {
@@ -63,6 +67,72 @@ test('a rescan keeps a session that straddles the window, keeps repos that faile
   assert.strictEqual(by('gh:me/flaky').length, 1);
   assert.strictEqual(saved.events.length, 0);
   assert.strictEqual(saved.ci['gh:me/app'].ref, 'main');
+});
+
+// Observe the engine calls rather than exposing widget internals. A controllable clip clock avoids long waits.
+const traceClips = `
+  window.clipTrace = []; window.clipTime = 0; window.scanCount = 0;
+  Object.defineProperty(performance, 'now', {value: () => window.clipTime});
+  const build = PetCore.build, updateCI = PetCore.updateCI;
+  PetCore.build = (D, f, o) => { if (o.clip) window.clipTrace.push(o.clip.name); return build(D, f, o); };
+  PetCore.updateCI = (...args) => { window.scanCount++; return updateCI(...args); };
+`;
+
+test('widget plays CI transitions in all themes, once, keeps the fixed message, and ignores a branch switch', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  for (const T of P.themes()) {
+    const now = Date.now(), ci = [{ref: 'main', s: 'SUCCESS'}];
+    const repos = {'me/app': {commits: [{oid: 'ci1', t: now - HOUR}, {oid: 'ci2', t: now - 30 * MIN}], ci}};
+    const save = {v: 2, name: 'dmn', theme: T.id, manual: [], auto: toS('me/app', repos['me/app'].commits), repos: [],
+      ci: {'gh:me/app': {s: 'pass', ref: 'main', at: now - HOUR}}, events: [], lastScan: {gh: now, gl: 0}, overrides: {}};
+    const {w, tell} = boot(save, repos, now, traceClips);
+    const scan = async () => {
+      const n = w.scanCount;
+      tell({type: 'rescan'});
+      await until(() => w.scanCount > n && !w.document.querySelector('#b-scan').disabled);
+    };
+    const settle = () => { w.clipTime += 10000; tell({type: 'settings', settings: {gh: {connected: true}}}); w.clipTrace.length = 0; };
+    try {
+      await until(() => w.scanCount > 0 && !w.document.querySelector('#b-scan').disabled);
+      assert.equal(w.clipTrace.length, 0, `${T.id}: no reaction on initial load`);
+      ci[0].s = 'FAILURE'; await scan();
+      assert.ok(w.clipTrace.includes('ciFail'), T.id + ': red build');
+      settle(); await scan();
+      assert.equal(w.clipTrace.length, 0, T.id + ': unchanged red does not replay');
+      ci[0].s = 'PENDING'; await scan();
+      assert.equal(w.clipTrace.length, 0, T.id + ': pending is not a fix');
+      ci[0].s = 'SUCCESS'; await scan();
+      assert.ok(w.clipTrace.includes('ciFixed'), T.id + ': red -> running -> green');
+      await until(() => !w.document.querySelector('#evofx').hidden);
+      assert.match(w.document.querySelector('#evofx').textContent, /fixed/i);
+      settle(); await scan();
+      assert.equal(w.clipTrace.length, 0, T.id + ': unchanged green does not replay');
+      ci[0].s = 'FAILURE'; await scan(); settle();
+      ci[0] = {ref: 'feature', s: 'SUCCESS'}; await scan();
+      assert.equal(w.clipTrace.length, 0, T.id + ': a branch switch is not a fix');
+    } finally { w.close(); }
+  }
+});
+
+test('a saved red build is quiet on startup; CI waits for an evolution from the same scan', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  const now = Date.now(), ci = [{ref: 'main', s: 'FAILURE'}];
+  const repos = {'me/app': {commits: [{oid: 'q1', t: now - HOUR}], ci}};
+  const save = {v: 2, name: 'dmn', manual: [], auto: toS('me/app', repos['me/app'].commits), repos: [],
+    ci: {'gh:me/app': {s: 'fail', ref: 'main', at: now - HOUR, since: now - HOUR}}, events: [], lastScan: {gh: now, gl: 0}, overrides: {}};
+  const extra = traceClips + `
+    const derive = PetCore.derive;
+    PetCore.derive = (...args) => ({...derive(...args), stage: window.scanCount > 1 ? 2 : 1});
+  `;
+  const {w, tell} = boot(save, repos, now, extra);
+  try {
+    await until(() => w.scanCount > 0 && !w.document.querySelector('#b-scan').disabled);
+    assert.equal(w.clipTrace.length, 0, 'loading a saved illness is not a new red build');
+    ci[0].s = 'SUCCESS'; tell({type: 'rescan'});
+    await until(() => w.scanCount > 1 && !w.document.querySelector('#b-scan').disabled);
+    assert.ok(w.clipTrace.includes('evolve'), 'evolution plays first');
+    assert.ok(!w.clipTrace.includes('ciFixed'), 'CI has been queued');
+    w.clipTime = 3000; tell({type: 'settings', settings: {gh: {connected: true}}});
+    assert.ok(w.clipTrace.includes('ciFixed'), 'the repair plays when evolution finishes');
+  } finally { w.close(); }
 });
 
 test('quit writes a pending rename before the quit message, and never writes an unchanged save', {skip: !JSDOM && 'jsdom not installed'}, async () => {

@@ -1,7 +1,7 @@
 /* Español */
 I18n.add('es', {
   'bar.wiki': 'Wiki: cómo funciona la mascota', 'tab.wiki': 'Wiki', 'bar.more': 'Alimentar, registro, ajustes y wiki',
-  'bar.hide': 'Ocultar en la bandeja (haz clic en el icono de la bandeja para volver)', 'bar.drag': 'Arrastra para mover',
+  'bar.size': 'Vista grande / compacta', 'bar.hide': 'Ocultar en la bandeja (haz clic en el icono de la bandeja para volver)', 'bar.drag': 'Arrastra para mover',
   'pet.rename': 'Renombrar', 'pet.name': 'Nombre de la mascota', 'bar.scan': 'Volver a escanear GitHub / GitLab',
   'tab.feed': 'Alimentar', 'tab.log': 'Registro', 'tab.setup': 'Ajustes',
   'feed.hint': 'Los commits llegan solos. Aquí registras el trabajo que nunca llega a un remoto: scripts locales, ajustes de Blueprints, revisiones.',
@@ -19,7 +19,7 @@ I18n.add('es', {
   'setup.repos': 'Repos con tus commits',
   'setup.ciHint': 'Columna CI: última ejecución en la rama donde hiciste push por última vez. Un build en rojo en un repo que tocaste en las últimas dos semanas enferma a la mascota; si la misma rama vuelve a verde, +15 XP, una vez al día por repo.',
   'setup.kindHint': 'Los repos de Unity y Unreal se detectan por <code>ProjectSettings/</code> + <code>Assets/</code> y <code>*.uproject</code>. Elige otra fuente si quieres cambiarla.',
-  'setup.top': 'Siempre visible', 'setup.auto': 'Iniciar con Windows', 'setup.data': 'Abrir carpeta de guardado', 'setup.quit': 'Salir',
+  'setup.window': 'Ventana', 'setup.top': 'Siempre visible', 'setup.auto': 'Iniciar con Windows', 'setup.data': 'Abrir carpeta de guardado', 'setup.quit': 'Salir',
 
   'time.now': 'ahora mismo', 'time.m': 'hace {n} min', 'time.h': 'hace {n} h', 'time.d': 'hace {n} d',
   'sync.preview': 'vista previa · datos de ejemplo', 'sync.connecting': 'conectando…', 'sync.syncing': 'sincronizando GitHub / GitLab…',

@@ -4,7 +4,7 @@
 const {clamp} = require('../core/util');
 const {CREST_STAGE} = require('../core/rules');
 const {C, mix} = require('./colors');
-const {G} = require('./raster');
+const {GW, G} = require('./raster');
 
 // Behind the creature, on the fixed screen: the Night Owl's moon and the Shipper's crate.
 function backdrop(ctx) {
@@ -51,13 +51,20 @@ function worn(ctx) {
 
 // Over the head: the crown of a Crowned pet, then the crest of the dominant source, in the affinity color.
 function crest(ctx) {
-  const {A, sprite, put, st, f, D, aff, mut, mo, motion, body, screen} = ctx;
+  const {A, sprite, put, top, st, f, D, aff, mut, mo, motion, body, screen} = ctx;
   let [tx, ty] = A.head;
-  if (mut.crowned && st >= CREST_STAGE) { sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], tx - 3, ty - 2, {y: C.gold, g: C.gem}); ty -= 3; }
+  const crowned = mut.crowned && st >= CREST_STAGE, gap = crowned ? 3 : 0;
+  const L = clamp(ty - gap - 4, 3, 6), spark = motion ? ((f >> 2) % 5) : 0;
+  const rise = Math.max(crowned ? 2 : 0, st < CREST_STAGE ? 0
+    : aff === 'github' ? gap + L + 2 : aff === 'gitlab' ? gap + 4.5
+    : aff === 'local' ? gap + 3 : aff === 'unreal' && spark === 2 ? gap + 4 : 0);
+  const dy = top(ty - rise) - (ty - rise);
+  // Tall pets keep their silhouette: only an overflowing crown/crest moves beside the head.
+  if (dy) { tx += tx < GW / 2 ? 14 : -14; ty += dy; }
+  if (crowned) { sprite(['y.y.y.y', 'yyygyyy', 'yyyyyyy'], tx - 3, ty - 2, {y: C.gold, g: C.gem}); ty -= 3; }
   if (st < CREST_STAGE) return;
   const hi = mix(body, '#ffffff', 0.6), sh = mix(body, screen, 0.42), deep = mix(body, screen, 0.75);
   if (aff === 'github') {  // a branching antenna
-    const L = clamp(ty - 4, 3, 6);  // shorter when the head is near the top edge
     for (let i = 1; i <= L; i++) put(tx, ty - i, sh);
     for (let i = 2; i < L; i++) put(tx + Math.min(3, i - 1), ty - i - 1, sh);
     const p = motion ? ((f >> 3) & 1) : 0;
@@ -71,11 +78,11 @@ function crest(ctx) {
     put(tx, ty - 1, sh); put(tx, ty - 2, sh); put(tx, ty - 3, (!motion || mo.alt) ? hi : sh);
   } else if (aff === 'unity') {  // a floating cube
     const [ux, uy] = A.cube, cb = motion ? ((f >> 2) & 1) : 0;
-    sprite(['...hhh...', '.hhhhhhh.', 'hhhhhhhhh', 'bbhhhhhss', 'bbbbhssss', 'bbbbbssss', 'bbbbbssss', '.bbbbsss.', '...bbs...'], ux - 4, uy + cb, {h: hi, b: body, s: sh});
+    sprite(['...hhh...', '.hhhhhhh.', 'hhhhhhhhh', 'bbhhhhhss', 'bbbbhssss', 'bbbbbssss', 'bbbbbssss', '.bbbbsss.', '...bbs...'], ux - 4, top(uy + cb), {h: hi, b: body, s: sh});
   } else if (aff === 'unreal') {  // a sparkle that hops around the creature
     const [x0, y0, x1, y1] = A.box;
     const sp = [[x0 - 1, y0 + 3], [x1 + 1, y0 + 8], [tx + 3, ty - 3], [x0 + 1, y1 - 6], [x1 - 2, y1 - 3]];
-    const [sx, sy] = sp[motion ? ((f >> 2) % sp.length) : 0];
+    const [sx, y] = sp[spark], sy = top(y - 1) + 1;
     put(sx, sy, hi); put(sx - 1, sy, sh); put(sx + 1, sy, sh); put(sx, sy - 1, sh); put(sx, sy + 1, sh);
   }
 }
