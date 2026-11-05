@@ -1,0 +1,65 @@
+name: release
+run-name: Release ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release name and tag (for example v1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm test
+      - name: Host checks with Windows PowerShell 5.1
+        shell: powershell
+        run: .\tests\host.tests.ps1
+      - name: Package runtime and calculate SHA-256
+        id: package
+        run: |
+          $package = ./tools/package-release.ps1 -Version $env:RELEASE_VERSION
+          "archive=$($package.Archive)" >> $env:GITHUB_OUTPUT
+          "checksum=$($package.Checksum)" >> $env:GITHUB_OUTPUT
+      - name: Create release with both assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARCHIVE_PATH: ${{ steps.package.outputs.archive }}
+          CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
+        run: |
+          # Reject an existing tag pointing elsewhere: assets must match the release's source.
+          $existingTag = git ls-remote --tags origin "refs/tags/$env:RELEASE_VERSION" "refs/tags/$env:RELEASE_VERSION^{}"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot check the remote tag.' }
+          if ($existingTag) {
+            $target = (($existingTag | Select-Object -Last 1) -split '\s+')[0]
+            if ($target -ne $env:GITHUB_SHA) { throw 'The version tag already points to a different commit.' }
+          }
+          # Upload to a draft first so a failed upload cannot publish an incomplete release.
+          gh release create $env:RELEASE_VERSION $env:ARCHIVE_PATH $env:CHECKSUM_PATH --draft --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --notes 'Download the ZIP, extract it and run Start code.daemon.vbs. The companion text file contains the ZIP SHA-256 checksum.'
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Check for an existing release or draft with this version.' }
+          gh release edit $env:RELEASE_VERSION --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; the draft has been kept.' }

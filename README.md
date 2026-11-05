@@ -127,6 +127,19 @@ To add a language, copy `ui/i18n/en.js` to `ui/i18n/<id>.js`, translate it toget
 
 See [`github-profile/SETUP.md`](github-profile/SETUP.md). Copy `github-profile/.github` into your `<you>/<you>` repo and add `<img src="code-daemon/pet.svg">` to its README. Set `PET_THEME` in the workflow to `classic`, `derp`, `slavic`, `asian`, `demonic` or `succubus`.
 
+## Releases
+
+Run **Actions → release → Run workflow**, select the branch to release, and enter a version such as `v1.2.3`. The workflow builds the engine, runs the tests, and publishes a release whose title and tag exactly match the version. The tag is created at the selected commit; an existing tag must point to that same commit. Existing releases are never overwritten. If an upload or publication fails after a draft is created, inspect/delete that draft before retrying.
+
+Release assets:
+
+- `code-daemon-<version>.zip`: the desktop host, normal VBS launcher, UI, fonts with their licenses, and WebView2 libraries. Tests, the debug launcher, engine sources, profile Action, documentation and development files are excluded.
+- `code-daemon-<version>.SHA256-<hash>.txt`: the ZIP's SHA-256 in both the filename and its contents (`<hash>  <archive name>`).
+
+Extract the ZIP and double-click `Start code.daemon.vbs`. Windows 10/11 and the WebView2 Runtime are required. GitHub also adds its own source archives; use the `code-daemon-<version>.zip` asset for the runtime package.
+
+To package locally, run `npm run build`, then `./tools/package-release.ps1 -Version v1.2.3` in PowerShell. Assets are written to `dist/`; existing ZIPs are not overwritten.
+
 ## Development
 
 The engine lives in `src/` as plain CommonJS modules. `npm run build` bundles it into `ui/pet-core.js` (loaded by the widget with a `<script>` tag) and copies it to `github-profile/.github/code-daemon/`. Never edit those two generated files by hand; `npm test` fails while they are out of date. No dependencies besides Node 22+.

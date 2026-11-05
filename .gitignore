@@ -3,3 +3,4 @@
 *.log
 github-profile/code-daemon/
 node_modules/
+/dist/
