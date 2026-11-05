@@ -1,7 +1,7 @@
 /* 日本語 */
 I18n.add('ja', {
   'bar.wiki': 'Wiki：ペットのしくみ', 'tab.wiki': 'Wiki', 'bar.more': 'エサ・ログ・設定・Wiki',
-  'bar.size': '大きい表示 / コンパクト表示', 'bar.hide': 'トレイに隠す（トレイのアイコンをクリックで戻ります）', 'bar.drag': 'ドラッグで移動',
+  'bar.pin': 'ウィンドウを固定', 'bar.size': '大きい表示 / コンパクト表示', 'bar.hide': 'トレイに隠す（トレイのアイコンをクリックで戻ります）', 'bar.drag': 'ドラッグで移動',
   'pet.rename': '名前を変更', 'pet.name': 'ペットの名前', 'bar.scan': 'GitHub / GitLab を今すぐ再スキャン',
   'tab.feed': 'エサ', 'tab.log': 'ログ', 'tab.setup': '設定',
   'feed.hint': 'コミットは自動で届きます。リモートに上がらない作業はここに記録しましょう：ローカルのスクリプト、Blueprint の調整、レビューなど。',

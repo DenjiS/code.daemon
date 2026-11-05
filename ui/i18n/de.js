@@ -1,7 +1,7 @@
 /* Deutsch */
 I18n.add('de', {
   'bar.wiki': 'Wiki: wie das Haustier funktioniert', 'tab.wiki': 'Wiki', 'bar.more': 'Füttern, Verlauf, Optionen und Wiki',
-  'bar.size': 'Große / kompakte Ansicht', 'bar.hide': 'In den Infobereich (Klick aufs Tray-Symbol holt es zurück)', 'bar.drag': 'Ziehen zum Verschieben',
+  'bar.pin': 'Fenster fixieren', 'bar.size': 'Große / kompakte Ansicht', 'bar.hide': 'In den Infobereich (Klick aufs Tray-Symbol holt es zurück)', 'bar.drag': 'Ziehen zum Verschieben',
   'pet.rename': 'Umbenennen', 'pet.name': 'Name des Haustiers', 'bar.scan': 'GitHub / GitLab jetzt neu scannen',
   'tab.feed': 'Füttern', 'tab.log': 'Verlauf', 'tab.setup': 'Optionen',
   'feed.hint': 'Commits kommen von allein. Hier trägst du Arbeit ein, die nie ein Remote erreicht: lokale Skripte, Blueprint-Anpassungen, Reviews.',

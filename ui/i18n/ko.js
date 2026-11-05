@@ -1,7 +1,7 @@
 /* 한국어 */
 I18n.add('ko', {
   'bar.wiki': '위키: 펫이 작동하는 방식', 'tab.wiki': '위키', 'bar.more': '먹이, 기록, 설정, 위키',
-  'bar.size': '큰 화면 / 작은 화면', 'bar.hide': '트레이로 숨기기 (트레이 아이콘을 클릭하면 돌아옵니다)', 'bar.drag': '끌어서 이동',
+  'bar.pin': '창 고정', 'bar.size': '큰 화면 / 작은 화면', 'bar.hide': '트레이로 숨기기 (트레이 아이콘을 클릭하면 돌아옵니다)', 'bar.drag': '끌어서 이동',
   'pet.rename': '이름 바꾸기', 'pet.name': '펫 이름', 'bar.scan': '지금 GitHub / GitLab 다시 스캔',
   'tab.feed': '먹이', 'tab.log': '기록', 'tab.setup': '설정',
   'feed.hint': '커밋은 알아서 들어옵니다. 원격에 올라가지 않는 작업을 여기에 기록하세요: 로컬 스크립트, 블루프린트 수정, 리뷰.',

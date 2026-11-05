@@ -1,7 +1,7 @@
 /* Português (Brasil) */
 I18n.add('pt', {
   'bar.wiki': 'Wiki: como o bichinho funciona', 'tab.wiki': 'Wiki', 'bar.more': 'Alimentar, registro, ajustes e wiki',
-  'bar.size': 'Visualização grande / compacta', 'bar.hide': 'Esconder na bandeja (clique no ícone da bandeja para trazer de volta)', 'bar.drag': 'Arraste para mover',
+  'bar.pin': 'Fixar janela', 'bar.size': 'Visualização grande / compacta', 'bar.hide': 'Esconder na bandeja (clique no ícone da bandeja para trazer de volta)', 'bar.drag': 'Arraste para mover',
   'pet.rename': 'Renomear', 'pet.name': 'Nome do bichinho', 'bar.scan': 'Escanear GitHub / GitLab agora',
   'tab.feed': 'Alimentar', 'tab.log': 'Registro', 'tab.setup': 'Ajustes',
   'feed.hint': 'Os commits chegam sozinhos. Registre aqui o trabalho que nunca chega a um remoto: scripts locais, ajustes de Blueprint, revisões.',

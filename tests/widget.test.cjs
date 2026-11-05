@@ -232,3 +232,40 @@ test('on the pet screen a press that stays put is a click, one that moves drags;
     assert.strictEqual(other.host.posted.filter(m => m && m.type === 'drag').length, 1, 'themes without reactions drag on press');
   } finally { other.w.close(); }
 });
+
+test('pin blocks header, pet and edge dragging, and restores from host settings', {skip: !JSDOM && 'jsdom not installed'}, async () => {
+  const {w, host, tell} = boot({}, {}, Date.now());
+  try {
+    await until(() => host.listener && host.posted.some(m => m.type === 'ready'));
+    await wait(30);
+    const button = w.document.querySelector('#b-pin');
+    const mouse = (el, type, x, y) => el.dispatchEvent(new w.MouseEvent(type, {bubbles: true, button: 0, buttons: 1, clientX: x, clientY: y}));
+    const header = w.document.querySelector('#bar'), screen = w.document.querySelector('#screen');
+    tell({type:'settings', settings:{pinned:true, large:true}});
+    assert.strictEqual(button.getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(screen.hasAttribute('title'), false);
+    w.document.querySelector('#b-more').click();
+    w.document.querySelector('[data-tab=setup]').click();
+    const language = w.document.querySelector('#lang-ui');
+    language.value = 'ru';
+    language.dispatchEvent(new w.Event('change', {bubbles: true}));
+    assert.strictEqual(w.document.documentElement.lang, 'ru');
+    assert.strictEqual(screen.hasAttribute('title'), false, 'language changes keep the drag hint hidden');
+    w.document.querySelector('#b-size').click(); // enable large view to exercise edge resizing
+    host.posted.length = 0;
+    mouse(header, 'mousedown', 100, 20);
+    mouse(screen, 'mousedown', 100, 100);
+    mouse(w, 'mousemove', 120, 120);
+    mouse(w.document.body, 'mousedown', 1, 1);
+    assert.ok(!host.posted.some(m => m.type === 'drag' || m.type === 'sizeDrag'));
+    button.click();
+    assert.strictEqual(button.getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(screen.title, w.I18n.t('ru', 'bar.drag'));
+    assert.ok(host.posted.some(m => m.type === 'pinned' && m.on === false));
+    mouse(header, 'mousedown', 100, 20);
+    assert.ok(host.posted.some(m => m.type === 'drag'));
+    button.click();
+    assert.ok(host.posted.some(m => m.type === 'pinned' && m.on === true));
+    assert.strictEqual(screen.hasAttribute('title'), false);
+  } finally { w.close(); }
+});

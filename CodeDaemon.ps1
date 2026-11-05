@@ -127,11 +127,11 @@ Restore-FromTmp $SetPath
 Restore-FromTmp $SavePath
 
 function Read-Settings {
-  $s = @{ ghToken = $null; glToken = $null; glUrl = 'https://gitlab.com'; topmost = $true; expanded = $false; large = $false; largeW = $null; largeH = $null; x = $null; y = $null }
+  $s = @{ ghToken = $null; glToken = $null; glUrl = 'https://gitlab.com'; topmost = $true; pinned = $false; expanded = $false; large = $false; largeW = $null; largeH = $null; x = $null; y = $null }
   if (Test-Path -LiteralPath $SetPath) {
     try {
       $o = [IO.File]::ReadAllText($SetPath) | ConvertFrom-Json
-      foreach ($k in @('ghToken', 'glToken', 'glUrl', 'topmost', 'expanded', 'large', 'largeW', 'largeH', 'x', 'y')) { if ($null -ne $o.$k) { $s[$k] = $o.$k } }
+      foreach ($k in @('ghToken', 'glToken', 'glUrl', 'topmost', 'pinned', 'expanded', 'large', 'largeW', 'largeH', 'x', 'y')) { if ($null -ne $o.$k) { $s[$k] = $o.$k } }
     } catch {
       # Keep the broken file instead of overwriting it with empty tokens on the next save.
       Write-Log "settings unreadable: $($_.Exception.Message)"
@@ -157,6 +157,7 @@ function Get-PublicSettings {
   return @{
     gh = @{ connected = [bool]$Settings.ghToken }
     gl = @{ connected = [bool]$Settings.glToken; url = [string]$Settings.glUrl }
+    pinned = [bool]$Settings.pinned
     topmost = [bool]$Settings.topmost
     expanded = [bool]$Settings.expanded
     large = [bool]$Settings.large
@@ -384,14 +385,14 @@ function Receive-PageMessage([string]$json) {
       if (Test-Path -LiteralPath $SavePath) { $saveText = [IO.File]::ReadAllText($SavePath) }
       Send-Raw ('{"type":"init","save":' + (ConvertTo-JsString $saveText) + ',"settings":' + ((Get-PublicSettings) | ConvertTo-Json -Compress -Depth 4) + '}')
     }
-    'drag' { [CdNative]::Drag($form.Handle); Save-Position }
+    'drag' { if (-not $Settings.pinned) { [CdNative]::Drag($form.Handle); Save-Position } }
     'resize' {
       if ($m.w) { Set-WidgetSize ([int]$m.w) ([int]$m.h) } else { Set-WidgetHeight ([int]$m.h) }
       Save-LargeSize
     }
     'sizeDrag' {
       $ht = @{ l = 10; r = 11; t = 12; tl = 13; tr = 14; b = 15; bl = 16; br = 17 }[[string]$m.edge]
-      if ($Settings.large -and $ht) {
+      if ($Settings.large -and $ht -and -not $Settings.pinned) {
         [CdNative]::Resize($form.Handle, $ht)
         $script:CssWidth = [int][Math]::Round($form.ClientSize.Width / $script:Scale)
         $script:CssHeight = [int][Math]::Round($form.ClientSize.Height / $script:Scale)
@@ -425,6 +426,10 @@ function Receive-PageMessage([string]$json) {
     }
     'topmost' {
       $Settings.topmost = [bool]$m.on; $form.TopMost = $Settings.topmost; Write-Settings
+      Send-ToPage @{ type = 'settings'; settings = (Get-PublicSettings) }
+    }
+    'pinned' {
+      $Settings.pinned = [bool]$m.on; Write-Settings
       Send-ToPage @{ type = 'settings'; settings = (Get-PublicSettings) }
     }
     'expanded' { $Settings.expanded = [bool]$m.on; Write-Settings }

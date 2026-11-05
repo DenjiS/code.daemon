@@ -56,7 +56,7 @@ function loadState(text) {
   return s;
 }
 let state = freshState();
-let settings = {gh:{connected:false}, gl:{connected:false, url:'https://gitlab.com'}, topmost:true, expanded:false, large:false, autostart:false};
+let settings = {gh:{connected:false}, gl:{connected:false, url:'https://gitlab.com'}, topmost:true, pinned:false, expanded:false, large:false, autostart:false};
 let errors = {gh:null, gl:null}, rate = {gh:null, gl:null};
 let scanning = false, ready = false, expanded = false, large = false, tab = 'feed';
 let shownStage = null;  // the stage on screen, to notice hunger taking one away
@@ -92,6 +92,12 @@ for (const [a, how] of I18N_ATTRS) for (const el of $$(`[${a}]`)) {
 }
 // A scan or host error: a dictionary key with values, or plain text that came from elsewhere.
 const errText = e => e && typeof e === 'object' && e.key ? t(e.key, e.vars) : String(e || '');
+function updateDragHint() {
+  for (const el of $$('[data-i18n-title="bar.drag"]')) {
+    if (settings.pinned) el.removeAttribute('title');
+    else el.setAttribute('title', t('bar.drag'));
+  }
+}
 function applyLang() {
   lang = state.lang !== 'auto' && I.has(state.lang) ? state.lang : sysLang;
   wikiLang = state.wikiLang !== 'ui' && I.has(state.wikiLang) ? state.wikiLang : lang;
@@ -100,6 +106,7 @@ function applyLang() {
     const v = t(el.getAttribute(a));
     if (how === 'html') { if (el.innerHTML !== v) el.innerHTML = v; } else if (how) el.setAttribute(how, v); else if (el.textContent !== v) el.textContent = v;
   }
+  updateDragHint();
   monthFmt = new Intl.DateTimeFormat(I.tag(lang), {month: 'short', day: 'numeric'});
   renderSrcs();
   post({type: 'menu', items: {show: t('tray.show'), rescan: t('tray.rescan'), data: t('tray.data'), quit: t('tray.quit')}});
@@ -368,6 +375,9 @@ function statusText() {
   return t('st.' + k, v);
 }
 function render() {
+  updateDragHint();
+  document.documentElement.classList.toggle('pinned', !!settings.pinned);
+  $('#b-pin').setAttribute('aria-pressed', String(!!settings.pinned));
   D = deriveNow();
   // hunger can take a stage at any minute, not only on a scan: show it when it happens while the widget is open
   if (ready && shownStage !== null && D.count && D.stage < shownStage) devolve(D.stage);
@@ -499,7 +509,7 @@ function setLarge(on, quiet) {
 // Resizing the large window: a press within a few px of its edge hands the drag to Windows.
 const EDGE_PX = 6, EDGE_CUR = {l:'ew-resize', r:'ew-resize', t:'ns-resize', b:'ns-resize', tl:'nwse-resize', br:'nwse-resize', tr:'nesw-resize', bl:'nesw-resize'};
 function edgeAt(e) {
-  if (!large || !wv) return '';
+  if (!large || !wv || settings.pinned) return '';
   const x = e.clientX, y = e.clientY, w = innerWidth, h = innerHeight;
   return (y < EDGE_PX ? 't' : y >= h - EDGE_PX ? 'b' : '') + (x < EDGE_PX ? 'l' : x >= w - EDGE_PX ? 'r' : '');
 }
@@ -512,6 +522,12 @@ window.addEventListener('mousedown', e => {
   e.preventDefault(); e.stopPropagation();
   post({type:'sizeDrag', edge: k});
 }, true);
+$('#b-pin').addEventListener('click', () => {
+  settings.pinned = !settings.pinned;
+  press = null; edge('');
+  post({type:'pinned', on: settings.pinned});
+  render();
+});
 $('#b-size').addEventListener('click', () => setLarge(!large));
 const PANEL_H = 380;  // in the large view opening the panel makes the window this much taller
 function setExpanded(on, which, keepSize) {
@@ -532,6 +548,7 @@ $('#app').addEventListener('click', e => { const t = e.target.closest('[data-wik
 $('#b-hide').addEventListener('click', () => post({type:'hide'}));
 $$('.tabs button').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; renderPanel(); }));
 function startDrag(e) {
+  if (settings.pinned) return;
   if (e.button !== 0 || e.target.closest('button,input,select,a,label')) return;
   e.preventDefault(); post({type:'drag'});
 }
@@ -592,7 +609,7 @@ $('#screen').addEventListener('mousedown', e => {
 window.addEventListener('mousemove', e => {
   if (press) {
     if (!(e.buttons & 1)) press = null;  // released outside the window
-    else if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_PX) { press = null; post({type: 'drag'}); }
+    else if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= DRAG_PX) { press = null; if (!settings.pinned) post({type: 'drag'}); }
     return;
   }
   if (!P.canReact(state.theme) || !(e.target.closest && e.target.closest('#screen'))) { if (hoverCell) { hoverCell = ''; canvas.style.cursor = ''; } return; }
@@ -706,7 +723,7 @@ nameIn.addEventListener('blur', () => commitName(true));
 function normSettings(s) {
   s = s || {};
   return {gh: {connected: !!(s.gh && s.gh.connected)}, gl: {connected: !!(s.gl && s.gl.connected), url: (s.gl && s.gl.url) || 'https://gitlab.com'},
-    topmost: s.topmost !== false, expanded: !!s.expanded, large: !!s.large, autostart: !!s.autostart};
+    topmost: s.topmost !== false, pinned: !!s.pinned, expanded: !!s.expanded, large: !!s.large, autostart: !!s.autostart};
 }
 function onHost(m) {
   if (!m || typeof m !== 'object') return;

@@ -1,7 +1,7 @@
 /* Español */
 I18n.add('es', {
   'bar.wiki': 'Wiki: cómo funciona la mascota', 'tab.wiki': 'Wiki', 'bar.more': 'Alimentar, registro, ajustes y wiki',
-  'bar.size': 'Vista grande / compacta', 'bar.hide': 'Ocultar en la bandeja (haz clic en el icono de la bandeja para volver)', 'bar.drag': 'Arrastra para mover',
+  'bar.pin': 'Fijar ventana', 'bar.size': 'Vista grande / compacta', 'bar.hide': 'Ocultar en la bandeja (haz clic en el icono de la bandeja para volver)', 'bar.drag': 'Arrastra para mover',
   'pet.rename': 'Renombrar', 'pet.name': 'Nombre de la mascota', 'bar.scan': 'Volver a escanear GitHub / GitLab',
   'tab.feed': 'Alimentar', 'tab.log': 'Registro', 'tab.setup': 'Ajustes',
   'feed.hint': 'Los commits llegan solos. Aquí registras el trabajo que nunca llega a un remoto: scripts locales, ajustes de Blueprints, revisiones.',

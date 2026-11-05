@@ -50,10 +50,13 @@ button,input,select{font:inherit;color:inherit}
 .logo i{width:7px;height:7px;border-radius:2px;background:var(--aff)}
 .logo b{color:var(--aff)}
 .grow{flex:1}
+.ib:not(#b-pin)[aria-pressed="true"]{color:var(--ink);background:var(--line)}
+html.pinned .bar,html.pinned .screen{cursor:default}
 .ib{width:24px;height:24px;display:grid;place-items:center;border:0;background:none;border-radius:5px;color:var(--muted);cursor:pointer;padding:0}
 .ib:hover{background:var(--track);color:var(--ink)}
 .ib svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
 .ib[aria-expanded="true"] svg{transform:rotate(180deg)}
+#b-pin[aria-pressed="true"] .pin-head{fill:currentColor}
 .ib.spin svg{animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -220,7 +223,9 @@ select.inp{padding:4px 5px;cursor:pointer}
 :root.large .bar{height:40px;padding:0 10px 0 16px}
 :root.large .logo{font-size:15px;gap:9px}
 :root.large .logo i{width:9px;height:9px}
-:root.large .ib{width:30px;height:30px}
+:root.large .ib:not(#b-pin)[aria-pressed="true"]{color:var(--ink);background:var(--line)}
+html.pinned .bar,html.pinned .screen{cursor:default}
+.ib{width:30px;height:30px}
 :root.large .ib svg{width:15px;height:15px}
 :root.large,:root.large body,:root.large .app{height:100%}
 :root.large .main{grid-template-columns:minmax(260px,1fr) auto;gap:16px;padding:0 16px 16px;flex:none}
@@ -286,6 +291,7 @@ select.inp{padding:4px 5px;cursor:pointer}
   <header class="bar" id="bar">
     <span class="logo"><i></i><span>code<b>.</b>daemon</span></span>
     <span class="grow"></span>
+    <button class="ib" id="b-pin" type="button" title="Pin window" data-i18n-title="bar.pin" aria-label="Pin window" data-i18n-aria="bar.pin" aria-pressed="false"><svg viewBox="0 0 12 12"><path class="pin-head" d="M4.5 1h3v4L9 7v1H3V7l1.5-2Z"/><path d="M4 1h4M6 8v3"/></svg></button>
     <button class="ib" id="b-size" type="button" title="Large / compact view" data-i18n-title="bar.size" aria-pressed="false"><svg viewBox="0 0 12 12"><path d="M7 2h3v3M10 2 7 5M5 10H2V7M2 10l3-3"/></svg></button>
     <button class="ib" id="b-wiki" type="button" title="Wiki: how the pet works" data-i18n-title="bar.wiki" aria-label="Wiki" data-i18n-aria="tab.wiki"><svg viewBox="0 0 12 12"><path d="M4.2 4.4a1.8 1.8 0 1 1 2.6 1.6c-.6.3-.8.7-.8 1.3v.2M6 9.4v.1"/></svg></button>
     <button class="ib" id="b-more" type="button" title="Feed, log, setup and wiki" data-i18n-title="bar.more" aria-expanded="false" aria-controls="panel"><svg viewBox="0 0 12 12"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>

@@ -1,7 +1,7 @@
 /* 简体中文 */
 I18n.add('zh', {
   'bar.wiki': '百科：宠物如何运作', 'tab.wiki': '百科', 'bar.more': '喂食、日志、设置和百科',
-  'bar.size': '大 / 紧凑视图', 'bar.hide': '隐藏到托盘（点击托盘图标即可恢复）', 'bar.drag': '拖动以移动',
+  'bar.pin': '固定窗口', 'bar.size': '大 / 紧凑视图', 'bar.hide': '隐藏到托盘（点击托盘图标即可恢复）', 'bar.drag': '拖动以移动',
   'pet.rename': '重命名', 'pet.name': '宠物名字', 'bar.scan': '立即重新扫描 GitHub / GitLab',
   'tab.feed': '喂食', 'tab.log': '日志', 'tab.setup': '设置',
   'feed.hint': '提交会自动到来。这里记录那些不会推送到远程的工作：本地脚本、蓝图调整、代码审查。',
